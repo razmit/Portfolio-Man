@@ -599,5 +599,3 @@ if ($DryRun) {
     Write-Host "`n⚠️  This was a DRY-RUN. No changes were made." -ForegroundColor Yellow
     Write-Host "Run without -DryRun to apply changes." -ForegroundColor Yellow
 }
-
-# I AM TESTING THE AUTO-PUBLISH FEATURE, HELP MEEEE
