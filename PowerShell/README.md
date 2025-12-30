@@ -15,7 +15,7 @@ Scripts for SharePoint Online management using PnP PowerShell:
 - **Bulk operations** - Mass user management, domain whitelisting.
 
 
-### Windows-Automation/
+### Windows-Administration/
 System administration and user provisioning scripts:
 - **New hire setup automation** - Standardized workstation configuration.
 - **Application deployment** - Silent installations and configurations.
