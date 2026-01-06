@@ -1,7 +1,7 @@
-connect-pnpOnline -Url https://companynet.sharepoint.com/sites/ -ClientId CLIENT_ID -Interactive
+connect-pnpOnline -Url https://companynet.sharepoint.com/sites/in_CultureConnections -clientId CLIENT_ID -interactive
 
 # The file's name
-$fileName = "FILE_NAME_TO_SEARCH_FOR"
+$fileName = "Events in a Box - AACE"
 
 # Get all document libraries in the site
 $lists = Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 } # 101 is the template ID for document libraries

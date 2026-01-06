@@ -4,7 +4,6 @@
 # Purpose: Reset inheritance on all libraries, folders, and files in a SharePoint site
 #          EXCEPT for specified libraries that should keep their unique permissions
 #
-# Author: Created with assistance from Claude
 # Date: December 2025
 # ============================================================================
 
