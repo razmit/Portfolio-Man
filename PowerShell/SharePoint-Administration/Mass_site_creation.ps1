@@ -153,7 +153,28 @@ foreach ($row in $excelData) {
 }
 
 # Create the new subsites
-New-SubSite -SubSiteUrls $newSubSiteUrls -SubSiteTitle $newSubSiteTitles
+# New-SubSite -SubSiteUrls $newSubSiteUrls -SubSiteTitle $newSubSiteTitles
+
+$titleCounter = 0
+$urlCounter = 0
+
+$urlPrefix = "https://companynet.sharepoint.com/sites/IWS_ORM_PCAOB_Inspections"
+
+$updatedData = $excelData | ForEach-Object {
+    [PSCustomObject]@{
+        Source       = $_.Source
+        NewUrl       = $_.'New URL of child site'
+        NewSiteTitle = $newSubSiteTitles[$titleCounter]
+        NewSiteUrl   = "${urlPrefix}/$($newSubSiteUrls[$urlCounter])"
+    }
+    
+    $titleCounter++
+    $urlCounter++
+}
+
+# Export the updated data to a new Excel file
+$exportPath = "C:\Users\E095713\Downloads\PCAOB_Mapping_Updated.xlsx"
+$updatedData | Export-Excel -Path $exportPath -WorksheetName "UpdatedSites"
 
 
 Write-Host "Total number of defined subsites: $definedSubSitesCounter" -ForegroundColor Yellow
