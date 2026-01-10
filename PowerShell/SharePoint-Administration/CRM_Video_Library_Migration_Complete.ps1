@@ -1,21 +1,27 @@
 # ============================================
 # CRM Video Library Migration - Complete Solution
 # ============================================
-# This script:
-# 1. Moves video files from Video content type folders to library root
-# 2. Preserves Resource Type metadata from the folders
-# 3. Handles naming collisions intelligently
-# 4. Cleans up empty folders after migration
+# This script migrates video files from a Classic library to a Modern library:
+# 1. Reads Resource Type metadata from SOURCE library folders
+# 2. Moves videos from folders to root in DESTINATION library
+# 3. Applies correct Resource Type metadata using source mapping
+# 4. Handles naming collisions intelligently
+# 5. Cleans up empty folders after migration
 # ============================================
 
 param(
-    [string]$SiteUrl = "https://companynet.sharepoint.com/sites/in_CRMResourceCenter",
+    [string]$SourceSiteUrl = "https://companynet.sharepoint.com/sites/Resources/IMC/CRMResourceCenter/",
+    [string]$SourceLibraryName = "CRM Simulation Library",
+    [string]$DestinationSiteUrl = "https://companynet.sharepoint.com/sites/in_CRMResourceCenter",
+    [string]$DestinationLibraryName = "CRM Video Library",
     [string]$ClientId = "CLIENT_ID",
-    [string]$LibraryName = "CRM Video Library",
     [switch]$WhatIf = $false  # Use -WhatIf to preview without making changes
 )
 
-# Connect to SharePoint
+# ============================================
+# PHASE 1: READ SOURCE LIBRARY METADATA
+# ============================================
+
 Write-Host "`n============================================" -ForegroundColor Cyan
 Write-Host "=== CRM VIDEO LIBRARY MIGRATION ===" -ForegroundColor Cyan
 Write-Host "============================================`n" -ForegroundColor Cyan
@@ -25,60 +31,206 @@ if ($WhatIf) {
     Write-Host "   No changes will be made`n" -ForegroundColor Yellow
 }
 
-Write-Host "Connecting to SharePoint..." -ForegroundColor Yellow
-Write-Host "  Site: $SiteUrl" -ForegroundColor Gray
-Write-Host "  Library: $LibraryName`n" -ForegroundColor Gray
+Write-Host "PHASE 1: Reading Resource Type metadata from SOURCE library" -ForegroundColor Cyan
+Write-Host "------------------------------------------------------------`n" -ForegroundColor Cyan
+
+Write-Host "Connecting to SOURCE library..." -ForegroundColor Yellow
+Write-Host "  Site: $SourceSiteUrl" -ForegroundColor Gray
+Write-Host "  Library: $SourceLibraryName`n" -ForegroundColor Gray
 
 try {
-    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -Interactive
-    Write-Host "✓ Connected successfully`n" -ForegroundColor Green
+    Connect-PnPOnline -Url $SourceSiteUrl -ClientId $ClientId -Interactive
+    Write-Host "✓ Connected to source library`n" -ForegroundColor Green
+}
+catch {
+    Write-Host "✗ Connection failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "`nTroubleshooting tips:" -ForegroundColor Yellow
+    Write-Host "  - Verify the source site URL is correct" -ForegroundColor White
+    Write-Host "  - Ensure you have access to the source site" -ForegroundColor White
+    Write-Host "  - Check if the library name is correct`n" -ForegroundColor White
+    exit 1
+}
+
+# Get source library
+Write-Host "Getting source library information..." -ForegroundColor Yellow
+try {
+    $sourceList = Get-PnPList -Identity $SourceLibraryName -ErrorAction Stop
+    $sourceLibraryUrl = $sourceList.RootFolder.ServerRelativeUrl
+    Write-Host "✓ Library path: $sourceLibraryUrl`n" -ForegroundColor Green
+}
+catch {
+    Write-Host "✗ Could not find library '$SourceLibraryName'" -ForegroundColor Red
+    Write-Host "`nAvailable libraries:" -ForegroundColor Yellow
+    Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 } | ForEach-Object {
+        Write-Host "  - $($_.Title)" -ForegroundColor Gray
+    }
+    exit 1
+}
+
+# Read all folders and their Resource Type values
+Write-Host "Reading folders and Resource Type values..." -ForegroundColor Yellow
+$sourceItems = Get-PnPListItem -List $sourceList -PageSize 5000 -Fields "FileLeafRef", "FileRef", "FSObjType", "FileDirRef", "Resource_x0020_Type"
+
+# Find all root-level folders (Video folders)
+$sourceFolders = $sourceItems | Where-Object {
+    $_.FieldValues.FSObjType -eq 1 -and
+    $_.FieldValues.FileDirRef -eq $sourceLibraryUrl
+}
+
+Write-Host "✓ Found $($sourceFolders.Count) video folders in source library`n" -ForegroundColor Green
+
+# Build mapping: FolderName → Resource Type
+$resourceTypeMapping = @{}
+$mappingStats = @{
+    WithResourceType = 0
+    WithoutResourceType = 0
+    Duplicates = 0
+}
+
+Write-Host "Building Resource Type mapping..." -ForegroundColor Yellow
+
+foreach ($folder in $sourceFolders) {
+    $folderName = $folder.FieldValues.FileLeafRef
+    $resourceType = $folder.FieldValues.Resource_x0020_Type
+
+    if ($resourceType) {
+        if ($resourceTypeMapping.ContainsKey($folderName)) {
+            Write-Host "  ⚠️  Duplicate folder name: $folderName" -ForegroundColor Yellow
+            $mappingStats.Duplicates++
+        }
+        else {
+            $resourceTypeMapping[$folderName] = $resourceType
+            $mappingStats.WithResourceType++
+        }
+    }
+    else {
+        Write-Host "  ⚠️  No Resource Type: $folderName" -ForegroundColor Yellow
+        $mappingStats.WithoutResourceType++
+    }
+}
+
+Write-Host "`nMapping Summary:" -ForegroundColor Cyan
+Write-Host "  Folders with Resource Type: $($mappingStats.WithResourceType)" -ForegroundColor Green
+Write-Host "  Folders without Resource Type: $($mappingStats.WithoutResourceType)" -ForegroundColor $(if ($mappingStats.WithoutResourceType -gt 0) { 'Yellow' } else { 'Gray' })
+Write-Host "  Duplicate folder names: $($mappingStats.Duplicates)" -ForegroundColor $(if ($mappingStats.Duplicates -gt 0) { 'Yellow' } else { 'Gray' })
+
+if ($resourceTypeMapping.Count -eq 0) {
+    Write-Host "`n✗ No Resource Type data found in source library!" -ForegroundColor Red
+    Write-Host "  Cannot proceed with migration.`n" -ForegroundColor Red
+    exit 1
+}
+
+# Show sample mapping
+Write-Host "`nSample mappings (first 5):" -ForegroundColor Cyan
+$resourceTypeMapping.GetEnumerator() | Select-Object -First 5 | ForEach-Object {
+    Write-Host "  $($_.Key) → $($_.Value)" -ForegroundColor Gray
+}
+
+# Export mapping to CSV for reference
+$mappingExportPath = "C:\Temp\CRM_ResourceType_Mapping_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+$resourceTypeMapping.GetEnumerator() | ForEach-Object {
+    [PSCustomObject]@{
+        FolderName = $_.Key
+        ResourceType = $_.Value
+    }
+} | Export-Csv $mappingExportPath -NoTypeInformation
+
+Write-Host "`n✓ Mapping exported to: $mappingExportPath" -ForegroundColor Green
+
+# ============================================
+# PHASE 2: MIGRATE DESTINATION LIBRARY
+# ============================================
+
+Write-Host "`n`n============================================" -ForegroundColor Cyan
+Write-Host "PHASE 2: Migrating DESTINATION library" -ForegroundColor Cyan
+Write-Host "------------------------------------------------------------`n" -ForegroundColor Cyan
+
+Write-Host "Connecting to DESTINATION library..." -ForegroundColor Yellow
+Write-Host "  Site: $DestinationSiteUrl" -ForegroundColor Gray
+Write-Host "  Library: $DestinationLibraryName`n" -ForegroundColor Gray
+
+try {
+    Connect-PnPOnline -Url $DestinationSiteUrl -ClientId $ClientId -Interactive
+    Write-Host "✓ Connected to destination library`n" -ForegroundColor Green
 }
 catch {
     Write-Host "✗ Connection failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
-# Get library information
-Write-Host "Getting library information..." -ForegroundColor Yellow
-$list = Get-PnPList -Identity $LibraryName
-$libraryUrl = $list.RootFolder.ServerRelativeUrl
-Write-Host "✓ Library path: $libraryUrl`n" -ForegroundColor Green
-
-# Retrieve all items
-Write-Host "Retrieving all items from library..." -ForegroundColor Yellow
-$allItems = Get-PnPListItem -List $list -PageSize 5000 -Fields "FileLeafRef", "FileRef", "FSObjType", "FileDirRef", "Resource_x0020_Type"
-Write-Host "✓ Retrieved $($allItems.Count) total items`n" -ForegroundColor Green
-
-# Find root-level folders (Video content type folders)
-$rootFolders = $allItems | Where-Object {
-    $_.FieldValues.FSObjType -eq 1 -and
-    $_.FieldValues.FileDirRef -eq $libraryUrl
-}
-
-Write-Host "Found $($rootFolders.Count) folders at library root`n" -ForegroundColor Cyan
-
-# Check if Resource Type field exists
-Write-Host "Verifying Resource Type field..." -ForegroundColor Yellow
+# Get destination library
+Write-Host "Getting destination library information..." -ForegroundColor Yellow
 try {
-    $resourceTypeField = Get-PnPField -List $list -Identity "Resource_x0020_Type" -ErrorAction Stop
-    Write-Host "✓ Resource Type field found: $($resourceTypeField.Title)`n" -ForegroundColor Green
+    $destList = Get-PnPList -Identity $DestinationLibraryName -ErrorAction Stop
+    $destLibraryUrl = $destList.RootFolder.ServerRelativeUrl
+    Write-Host "✓ Library path: $destLibraryUrl`n" -ForegroundColor Green
 }
 catch {
-    Write-Host "⚠️  Resource Type field not found!" -ForegroundColor Red
-    Write-Host "   Looking for alternative field names..." -ForegroundColor Yellow
+    Write-Host "✗ Could not find library '$DestinationLibraryName'" -ForegroundColor Red
+    Write-Host "`nAvailable libraries:" -ForegroundColor Yellow
+    Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 } | ForEach-Object {
+        Write-Host "  - $($_.Title)" -ForegroundColor Gray
+    }
+    exit 1
+}
 
-    $fields = Get-PnPField -List $list | Where-Object { $_.Title -like "*Resource*" -or $_.Title -like "*Type*" }
-    if ($fields) {
-        Write-Host "`n   Found these similar fields:" -ForegroundColor Cyan
-        $fields | ForEach-Object {
-            Write-Host "     - $($_.Title) (Internal: $($_.InternalName))" -ForegroundColor Gray
+# Check if Resource Type field exists, create if needed
+Write-Host "Checking Resource Type field..." -ForegroundColor Yellow
+
+try {
+    $resourceTypeField = Get-PnPField -List $destList -Identity "Resource_x0020_Type" -ErrorAction Stop
+    Write-Host "✓ Resource Type field exists: $($resourceTypeField.Title)" -ForegroundColor Green
+    Write-Host "  Internal name: $($resourceTypeField.InternalName)" -ForegroundColor Gray
+    Write-Host "  Type: $($resourceTypeField.TypeAsString)`n" -ForegroundColor Gray
+}
+catch {
+    Write-Host "⚠️  Resource Type field does not exist" -ForegroundColor Yellow
+    Write-Host "  Creating new Choice field..." -ForegroundColor Yellow
+
+    if (-not $WhatIf) {
+        try {
+            # Create the Resource Type field as Choice
+            $choices = @("User Guides", "Simulations", "Role-based", "Trainings")
+
+            Add-PnPField -List $destList -DisplayName "Resource Type" -InternalName "Resource_x0020_Type" -Type Choice -Choices $choices -AddToDefaultView
+
+            Write-Host "✓ Resource Type field created successfully`n" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "✗ Failed to create field: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "`nYou may need to create this field manually:" -ForegroundColor Yellow
+            Write-Host "  Field name: Resource Type" -ForegroundColor White
+            Write-Host "  Internal name: Resource_x0020_Type" -ForegroundColor White
+            Write-Host "  Type: Choice" -ForegroundColor White
+            Write-Host "  Choices: User Guides, Simulations, Role-based, Trainings`n" -ForegroundColor White
+
+            $continue = Read-Host "Continue anyway? (y/n)"
+            if ($continue -ne 'y') {
+                exit 1
+            }
         }
     }
-
-    Write-Host "`n   The script will continue, but Resource Type data may not be preserved." -ForegroundColor Yellow
-    Write-Host "   Press Enter to continue or Ctrl+C to exit..." -ForegroundColor Yellow
-    Read-Host
+    else {
+        Write-Host "  [WhatIf] Would create Resource Type field with choices:" -ForegroundColor Gray
+        Write-Host "    - User Guides" -ForegroundColor Gray
+        Write-Host "    - Simulations" -ForegroundColor Gray
+        Write-Host "    - Role-based" -ForegroundColor Gray
+        Write-Host "    - Trainings`n" -ForegroundColor Gray
+    }
 }
+
+# Get all items from destination library
+Write-Host "Retrieving all items from destination library..." -ForegroundColor Yellow
+$destItems = Get-PnPListItem -List $destList -PageSize 5000 -Fields "FileLeafRef", "FileRef", "FSObjType", "FileDirRef", "Resource_x0020_Type"
+Write-Host "✓ Retrieved $($destItems.Count) total items`n" -ForegroundColor Green
+
+# Find root-level folders in destination
+$destFolders = $destItems | Where-Object {
+    $_.FieldValues.FSObjType -eq 1 -and
+    $_.FieldValues.FileDirRef -eq $destLibraryUrl
+}
+
+Write-Host "Found $($destFolders.Count) folders to process`n" -ForegroundColor Cyan
 
 # Statistics tracking
 $stats = @{
@@ -87,38 +239,52 @@ $stats = @{
     VideosUpdated = 0
     VideosSkipped = 0
     FoldersDeleted = 0
+    MappingFound = 0
+    MappingNotFound = 0
     Errors = 0
 }
 
 $movedFiles = @()
 $errors = @()
-$skippedFiles = @()
 
-# Process each folder
+# ============================================
+# PHASE 3: PROCESS FOLDERS AND MOVE VIDEOS
+# ============================================
+
 Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "=== PROCESSING VIDEO FOLDERS ===" -ForegroundColor Cyan
+Write-Host "PHASE 3: Processing folders and moving videos" -ForegroundColor Cyan
 Write-Host "============================================`n" -ForegroundColor Cyan
 
-foreach ($folder in $rootFolders) {
+foreach ($folder in $destFolders) {
     $folderPath = $folder.FieldValues.FileRef
     $folderName = $folder.FieldValues.FileLeafRef
-    $resourceType = $folder.FieldValues.Resource_x0020_Type
 
     $stats.FoldersProcessed++
 
-    Write-Host "[$($stats.FoldersProcessed)/$($rootFolders.Count)] Folder: $folderName" -ForegroundColor Cyan
+    Write-Host "[$($stats.FoldersProcessed)/$($destFolders.Count)] Folder: $folderName" -ForegroundColor Cyan
 
-    if ($resourceType) {
-        Write-Host "  Resource Type: $resourceType" -ForegroundColor Green
+    # Look up Resource Type from source mapping
+    $mappedResourceType = $resourceTypeMapping[$folderName]
+
+    if ($mappedResourceType) {
+        Write-Host "  ✓ Resource Type (from source): $mappedResourceType" -ForegroundColor Green
+        $stats.MappingFound++
     }
     else {
-        Write-Host "  ⚠️  No Resource Type found on folder" -ForegroundColor Yellow
+        Write-Host "  ⚠️  No Resource Type mapping found for this folder" -ForegroundColor Yellow
+        $stats.MappingNotFound++
+
+        $errors += [PSCustomObject]@{
+            Folder = $folderName
+            Issue = "No Resource Type mapping found in source library"
+            Action = "Manual review needed"
+        }
     }
 
-    # Find video files in this folder
-    $filesInFolder = $allItems | Where-Object {
+    # Find video files in this folder (including subfolders)
+    $filesInFolder = $destItems | Where-Object {
         $_.FieldValues.FSObjType -eq 0 -and
-        $_.FieldValues.FileDirRef -eq $folderPath -and
+        $_.FieldValues.FileRef -like "$folderPath/*" -and
         $_.FieldValues.FileLeafRef -match '\.(mp4|mov|avi|wmv|webm|m4v|flv|mkv)$'
     }
 
@@ -146,62 +312,49 @@ foreach ($folder in $rootFolders) {
 
         # Check if file already exists at library root
         $targetFileName = $fileName
-        $targetUrl = "$libraryUrl/$targetFileName"
+        $targetUrl = "$destLibraryUrl/$targetFileName"
 
-        $existingFile = $allItems | Where-Object {
+        $existingFile = $destItems | Where-Object {
             $_.FieldValues.FileRef -eq $targetUrl -and
             $_.FieldValues.FSObjType -eq 0
         }
 
-        if ($existingFile) {
-            # File already exists at root - check if it's the same file or a duplicate
-            if ($existingFile.Id -eq $fileItem.Id) {
-                Write-Host "      ✓ Already at library root (skipping)" -ForegroundColor Gray
-                $stats.VideosSkipped++
+        if ($existingFile -and $existingFile.Id -ne $fileItem.Id) {
+            # Different file with same name exists - rename needed
+            $nameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+            $extension = [System.IO.Path]::GetExtension($fileName)
+            $targetFileName = "$nameWithoutExt - $folderName$extension"
+            $targetUrl = "$destLibraryUrl/$targetFileName"
 
-                # Still update metadata if missing
-                if ($resourceType -and -not $existingFile.FieldValues.Resource_x0020_Type) {
-                    Write-Host "      → Updating missing Resource Type..." -ForegroundColor Yellow
+            Write-Host "      ⚠️  Name collision - renaming to: $targetFileName" -ForegroundColor Yellow
+        }
+        elseif ($existingFile -and $existingFile.Id -eq $fileItem.Id) {
+            Write-Host "      ✓ Already at library root (skipping move)" -ForegroundColor Gray
+            $stats.VideosSkipped++
 
-                    if (-not $WhatIf) {
-                        try {
-                            Set-PnPListItem -List $list -Identity $existingFile.Id -Values @{
-                                "Resource_x0020_Type" = $resourceType
-                            } -UpdateType SystemUpdate
+            # Still update metadata if missing and we have a mapping
+            if ($mappedResourceType -and -not $existingFile.FieldValues.Resource_x0020_Type) {
+                Write-Host "      → Updating Resource Type..." -ForegroundColor Yellow
 
-                            Write-Host "      ✓ Resource Type updated" -ForegroundColor Green
-                            $stats.VideosUpdated++
-                        }
-                        catch {
-                            Write-Host "      ✗ Failed to update: $($_.Exception.Message)" -ForegroundColor Red
-                        }
+                if (-not $WhatIf) {
+                    try {
+                        Set-PnPListItem -List $destList -Identity $existingFile.Id -Values @{
+                            "Resource_x0020_Type" = $mappedResourceType
+                        } -UpdateType SystemUpdate
+
+                        Write-Host "      ✓ Resource Type updated to: $mappedResourceType" -ForegroundColor Green
+                        $stats.VideosUpdated++
                     }
-                    else {
-                        Write-Host "      [WhatIf] Would update Resource Type to: $resourceType" -ForegroundColor Gray
+                    catch {
+                        Write-Host "      ✗ Failed to update: $($_.Exception.Message)" -ForegroundColor Red
+                        $stats.Errors++
                     }
-                }
-
-                continue
-            }
-            else {
-                # Different file with same name - need to rename
-                $nameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
-                $extension = [System.IO.Path]::GetExtension($fileName)
-
-                # Check if filename already includes folder name (from previous migration attempts)
-                if ($nameWithoutExt -match "^(.+)\s+-\s+(.+)$") {
-                    # Already has a suffix, just use original name
-                    $targetFileName = $fileName
                 }
                 else {
-                    # Add folder name as suffix
-                    $targetFileName = "$nameWithoutExt - $folderName$extension"
+                    Write-Host "      [WhatIf] Would set Resource Type to: $mappedResourceType" -ForegroundColor Gray
                 }
-
-                $targetUrl = "$libraryUrl/$targetFileName"
-                Write-Host "      ⚠️  Name collision detected" -ForegroundColor Yellow
-                Write-Host "      → Renaming to: $targetFileName" -ForegroundColor Yellow
             }
+            continue
         }
 
         # Move the file
@@ -213,31 +366,33 @@ foreach ($folder in $rootFolders) {
                 Write-Host "      ✓ Moved successfully" -ForegroundColor Green
                 $stats.VideosMoved++
 
-                # Update Resource Type metadata
-                if ($resourceType) {
-                    Write-Host "      → Setting Resource Type: $resourceType" -ForegroundColor Gray
+                # Update Resource Type if we have a mapping
+                if ($mappedResourceType) {
+                    Write-Host "      → Setting Resource Type: $mappedResourceType" -ForegroundColor Gray
 
                     try {
-                        # Get the moved file's new ID
-                        Start-Sleep -Milliseconds 500  # Brief pause to ensure file is indexed
+                        # Brief pause to ensure file is indexed
+                        Start-Sleep -Milliseconds 500
                         $movedFile = Get-PnPFile -Url $targetUrl -AsListItem
 
-                        Set-PnPListItem -List $list -Identity $movedFile.Id -Values @{
-                            "Resource_x0020_Type" = $resourceType
+                        Set-PnPListItem -List $destList -Identity $movedFile.Id -Values @{
+                            "Resource_x0020_Type" = $mappedResourceType
                         } -UpdateType SystemUpdate
 
                         Write-Host "      ✓ Resource Type set" -ForegroundColor Green
                         $stats.VideosUpdated++
                     }
                     catch {
-                        Write-Host "      ⚠️  Could not set Resource Type: $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Host "      ⚠️  Move succeeded but Resource Type update failed" -ForegroundColor Yellow
+                        Write-Host "         Error: $($_.Exception.Message)" -ForegroundColor Gray
 
                         $errors += [PSCustomObject]@{
                             Folder = $folderName
                             File = $fileName
-                            Issue = "Move succeeded but Resource Type update failed: $($_.Exception.Message)"
-                            Action = "Manual review needed"
+                            Issue = "Resource Type update failed: $($_.Exception.Message)"
+                            Action = "Manual update needed"
                         }
+                        $stats.Errors++
                     }
                 }
 
@@ -245,7 +400,7 @@ foreach ($folder in $rootFolders) {
                     OriginalFolder = $folderName
                     OriginalFileName = $fileName
                     NewFileName = $targetFileName
-                    ResourceType = $resourceType
+                    ResourceType = $mappedResourceType
                     NewPath = $targetUrl
                 }
             }
@@ -263,22 +418,24 @@ foreach ($folder in $rootFolders) {
         }
         else {
             Write-Host "      [WhatIf] Would move to: $targetUrl" -ForegroundColor Gray
-            if ($resourceType) {
-                Write-Host "      [WhatIf] Would set Resource Type: $resourceType" -ForegroundColor Gray
+            if ($mappedResourceType) {
+                Write-Host "      [WhatIf] Would set Resource Type: $mappedResourceType" -ForegroundColor Gray
             }
         }
     }
 
     # Delete the folder after processing (if not in WhatIf mode)
     if ($filesInFolder.Count -gt 0 -and -not $WhatIf) {
-        Write-Host "`n  → Removing empty folder..." -ForegroundColor Yellow
+        Write-Host "`n  → Checking if folder is empty..." -ForegroundColor Yellow
 
         try {
-            # Refresh folder to check if it's empty
-            $folderCheck = Get-PnPFolderItem -FolderSiteRelativeUrl $folder.FieldValues.FileRef.Replace($libraryUrl + "/", "")
+            # Check if folder is empty (all videos moved out)
+            $remainingItems = Get-PnPFolderItem -FolderSiteRelativeUrl $folder.FieldValues.FileRef.Replace($destLibraryUrl + "/", "") -ErrorAction Stop
 
-            if ($folderCheck.Count -eq 0) {
-                $folderItem = Get-PnPListItem -List $list -Id $folder.Id
+            if ($remainingItems.Count -eq 0) {
+                Write-Host "  → Deleting empty folder..." -ForegroundColor Yellow
+
+                $folderItem = Get-PnPListItem -List $destList -Id $folder.Id
                 $folderItem.DeleteObject()
                 Invoke-PnPQuery
 
@@ -286,8 +443,8 @@ foreach ($folder in $rootFolders) {
                 $stats.FoldersDeleted++
             }
             else {
-                Write-Host "  ⚠️  Folder still contains items, not deleted" -ForegroundColor Yellow
-                Write-Host "     (May contain subfolders or other files)`n" -ForegroundColor Gray
+                Write-Host "  ⚠️  Folder still contains $($remainingItems.Count) item(s)" -ForegroundColor Yellow
+                Write-Host "     (May contain subfolders - you may need to delete manually)`n" -ForegroundColor Gray
             }
         }
         catch {
@@ -313,6 +470,8 @@ Write-Host "============================================`n" -ForegroundColor Cya
 
 Write-Host "Summary:" -ForegroundColor White
 Write-Host "  Folders processed: $($stats.FoldersProcessed)" -ForegroundColor White
+Write-Host "  Resource Type mappings found: $($stats.MappingFound)" -ForegroundColor $(if ($stats.MappingFound -gt 0) { 'Green' } else { 'Gray' })
+Write-Host "  Resource Type mappings NOT found: $($stats.MappingNotFound)" -ForegroundColor $(if ($stats.MappingNotFound -gt 0) { 'Yellow' } else { 'Gray' })
 Write-Host "  Videos moved: $($stats.VideosMoved)" -ForegroundColor $(if ($stats.VideosMoved -gt 0) { 'Green' } else { 'Gray' })
 Write-Host "  Videos updated (metadata): $($stats.VideosUpdated)" -ForegroundColor $(if ($stats.VideosUpdated -gt 0) { 'Green' } else { 'Gray' })
 Write-Host "  Videos skipped (already at root): $($stats.VideosSkipped)" -ForegroundColor Gray
@@ -321,22 +480,22 @@ Write-Host "  Errors: $($stats.Errors)" -ForegroundColor $(if ($stats.Errors -gt
 
 # Export moved files report
 if ($movedFiles.Count -gt 0 -and -not $WhatIf) {
-    Write-Host "`n--- Moved Files ---" -ForegroundColor Cyan
+    Write-Host "`n--- Moved Files (first 10) ---" -ForegroundColor Cyan
 
-    $movedFiles | Select-Object -First 5 | ForEach-Object {
+    $movedFiles | Select-Object -First 10 | ForEach-Object {
         Write-Host "  ✓ [$($_.OriginalFolder)] $($_.OriginalFileName)" -ForegroundColor Green
         if ($_.ResourceType) {
             Write-Host "    → Resource Type: $($_.ResourceType)" -ForegroundColor Gray
         }
     }
 
-    if ($movedFiles.Count -gt 5) {
-        Write-Host "  ... and $($movedFiles.Count - 5) more" -ForegroundColor Gray
+    if ($movedFiles.Count -gt 10) {
+        Write-Host "  ... and $($movedFiles.Count - 10) more" -ForegroundColor Gray
     }
 
-    $reportPath = "C:\Temp\CRM_Video_Migration_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
+    $reportPath = "C:\Temp\CRM_Video_Migration_Report_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
     $movedFiles | Export-Csv $reportPath -NoTypeInformation
-    Write-Host "`n✓ Full report exported to: $reportPath" -ForegroundColor Cyan
+    Write-Host "`n✓ Full migration report: $reportPath" -ForegroundColor Cyan
 }
 
 # Show errors if any
@@ -353,12 +512,18 @@ if ($errors.Count -gt 0) {
 
 # Next steps
 Write-Host "`nNext Steps:" -ForegroundColor Yellow
-Write-Host "  1. Verify videos are at library root in browser" -ForegroundColor White
-Write-Host "  2. Verify Resource Type metadata is preserved" -ForegroundColor White
-Write-Host "  3. Test video playback and Replace functionality" -ForegroundColor White
+Write-Host "  1. Review the mapping CSV to verify Resource Types" -ForegroundColor White
+Write-Host "  2. Check videos at library root in browser" -ForegroundColor White
+Write-Host "  3. Verify Resource Type column values are correct" -ForegroundColor White
+Write-Host "  4. Test video playback and Replace functionality" -ForegroundColor White
 
-if ($rootFolders.Count -gt 0 -and $stats.FoldersDeleted -lt $rootFolders.Count) {
-    Write-Host "  4. Review and manually delete any remaining folders" -ForegroundColor White
+if ($destFolders.Count -gt 0 -and $stats.FoldersDeleted -lt $destFolders.Count) {
+    Write-Host "  5. Review and manually delete any remaining folders" -ForegroundColor White
+}
+
+if ($stats.MappingNotFound -gt 0) {
+    Write-Host "`n⚠️  WARNING: $($stats.MappingNotFound) folder(s) had no Resource Type mapping" -ForegroundColor Yellow
+    Write-Host "   Review the errors CSV and update these manually" -ForegroundColor Yellow
 }
 
 if ($WhatIf) {
@@ -367,3 +532,4 @@ if ($WhatIf) {
 }
 
 Write-Host "`n✓ Migration script completed" -ForegroundColor Green
+Write-Host "============================================`n" -ForegroundColor Cyan
