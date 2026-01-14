@@ -11,7 +11,15 @@
 #   - Optional co-owner addition for editing access
 #
 # Usage:
+#   .\Find-PowerPlatformResource.ps1
 #   .\Find-PowerPlatformResource.ps1 -ClientId "your-azure-app-id"
+#   .\Find-PowerPlatformResource.ps1 -UserObjectId "your-object-id-guid"
+#   .\Find-PowerPlatformResource.ps1 -ClientId "your-azure-app-id" -UserObjectId "your-object-id-guid"
+#
+# Parameters:
+#   -ClientId: (Optional) Azure AD app registration ID for authentication
+#   -UserObjectId: (Optional) Your Azure AD Object ID (GUID) for co-owner operations
+#                  Find this in Azure Portal -> Azure AD -> Users -> Your Profile
 #
 # Requirements:
 #   - Microsoft.PowerApps.Administration.PowerShell module
@@ -20,7 +28,10 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [string]$ClientId
+    [string]$ClientId,
+
+    [Parameter(Mandatory=$false)]
+    [string]$UserObjectId
 )
 
 # ============================================================================
@@ -323,41 +334,59 @@ try {
     Write-Host "  ✓ Authentication successful!" -ForegroundColor Green
 
     # Get current user's Object ID for co-owner operations
-    Write-Host "  Retrieving your user information..." -ForegroundColor Yellow
     $script:CurrentUserObjectId = $null
     $script:CurrentUserEmail = $null
 
-    try {
-        $currentUser = Get-UsersOrGroupsFromGraph -ObjectId "me" -ErrorAction Stop
-        $script:CurrentUserObjectId = $currentUser.objectId
-        $script:CurrentUserEmail = $currentUser.userPrincipalName
-        Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
+    # Check if Object ID was provided as parameter
+    if (-not [string]::IsNullOrEmpty($UserObjectId)) {
+        Write-Host "  Using provided User Object ID: $UserObjectId" -ForegroundColor Green
+        $script:CurrentUserObjectId = $UserObjectId
     }
-    catch {
-        Write-Host "  ⚠ Could not automatically retrieve user info" -ForegroundColor Yellow
-        Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor DarkGray
-        Write-Host "`n  This is needed for the co-owner feature." -ForegroundColor Yellow
-        Write-Host "  Would you like to provide your email manually? (y/n)" -ForegroundColor White
+    else {
+        Write-Host "  Retrieving your user information..." -ForegroundColor Yellow
 
-        $manualInput = Read-Host "  "
-
-        if ($manualInput -eq "y" -or $manualInput -eq "yes") {
-            $userEmail = Read-Host "`n  Enter your email/UPN (e.g., user@domain.com)"
-
-            try {
-                Write-Host "  Looking up user information..." -ForegroundColor Yellow
-                $lookedUpUser = Get-UsersOrGroupsFromGraph -ObjectId $userEmail -ErrorAction Stop
-                $script:CurrentUserObjectId = $lookedUpUser.objectId
-                $script:CurrentUserEmail = $lookedUpUser.userPrincipalName
-                Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
-            }
-            catch {
-                Write-Host "  ✗ Could not look up user: $($_.Exception.Message)" -ForegroundColor Red
-                Write-Host "  Co-owner feature will not be available" -ForegroundColor DarkGray
-            }
+        try {
+            $currentUser = Get-UsersOrGroupsFromGraph -ObjectId "me" -ErrorAction Stop
+            $script:CurrentUserObjectId = $currentUser.objectId
+            $script:CurrentUserEmail = $currentUser.userPrincipalName
+            Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
         }
-        else {
-            Write-Host "  Skipping user lookup. Co-owner feature will not be available" -ForegroundColor DarkGray
+        catch {
+            Write-Host "  ⚠ Could not automatically retrieve user info" -ForegroundColor Yellow
+            Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+            Write-Host "`n  This is needed for the co-owner feature." -ForegroundColor Yellow
+            Write-Host "  You can provide your Object ID as a parameter: -UserObjectId 'your-guid'" -ForegroundColor Cyan
+            Write-Host "`n  Would you like to provide your Object ID now? (y/n)" -ForegroundColor White
+
+            $manualInput = Read-Host "  "
+
+            if ($manualInput -eq "y" -or $manualInput -eq "yes") {
+                Write-Host "`n  How to find your Object ID:" -ForegroundColor Yellow
+                Write-Host "    1. Go to https://portal.azure.com" -ForegroundColor DarkGray
+                Write-Host "    2. Navigate to Azure Active Directory -> Users" -ForegroundColor DarkGray
+                Write-Host "    3. Search for your name and click on it" -ForegroundColor DarkGray
+                Write-Host "    4. Copy the 'Object ID' (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)" -ForegroundColor DarkGray
+                Write-Host "`n    OR use Power Platform Admin Center:" -ForegroundColor Yellow
+                Write-Host "    1. Go to https://admin.powerplatform.microsoft.com" -ForegroundColor DarkGray
+                Write-Host "    2. Your Object ID may be visible in user settings" -ForegroundColor DarkGray
+
+                $objectId = Read-Host "`n  Enter your Object ID (GUID format)"
+
+                # Validate GUID format
+                try {
+                    $guidTest = [System.Guid]::Parse($objectId)
+                    $script:CurrentUserObjectId = $objectId
+                    Write-Host "  ✓ Object ID accepted!" -ForegroundColor Green
+                    Write-Host "    Tip: Next time, use -UserObjectId '$objectId' parameter to skip this step" -ForegroundColor Cyan
+                }
+                catch {
+                    Write-Host "  ✗ Invalid GUID format" -ForegroundColor Red
+                    Write-Host "  Co-owner feature will not be available" -ForegroundColor DarkGray
+                }
+            }
+            else {
+                Write-Host "  Skipping user lookup. Co-owner feature will not be available" -ForegroundColor DarkGray
+            }
         }
     }
 }
