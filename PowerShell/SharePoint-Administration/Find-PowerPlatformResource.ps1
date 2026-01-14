@@ -274,13 +274,20 @@ function Add-AsCoOwner {
 
     Write-Host "`nAdding you as co-owner..." -ForegroundColor Yellow
 
+    # Check if we have user object ID
+    if ([string]::IsNullOrEmpty($script:CurrentUserObjectId)) {
+        Write-Host "✗ Cannot add as co-owner: User information not available" -ForegroundColor Red
+        Write-Host "  Try re-running the script with proper authentication" -ForegroundColor DarkGray
+        return $false
+    }
+
     try {
         if ($ResourceType -eq "App") {
-            Set-AdminPowerAppRoleAssignment -AppName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId (Get-UsersOrGroupsFromGraph -ObjectId "me").objectId
+            Set-AdminPowerAppRoleAssignment -AppName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId $script:CurrentUserObjectId -ErrorAction Stop
             Write-Host "✓ Successfully added as co-owner of the app" -ForegroundColor Green
         }
         elseif ($ResourceType -eq "Flow") {
-            Set-AdminFlowOwnerRole -FlowName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId (Get-UsersOrGroupsFromGraph -ObjectId "me").objectId
+            Set-AdminFlowOwnerRole -FlowName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId $script:CurrentUserObjectId -ErrorAction Stop
             Write-Host "✓ Successfully added as co-owner of the flow" -ForegroundColor Green
         }
 
@@ -289,6 +296,7 @@ function Add-AsCoOwner {
     }
     catch {
         Write-Host "✗ Failed to add as co-owner: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  This may be due to insufficient permissions or the resource being managed" -ForegroundColor DarkGray
         return $false
     }
 }
@@ -300,8 +308,8 @@ function Add-AsCoOwner {
 Write-SectionHeader "AUTHENTICATION"
 
 try {
-    Import-Module Microsoft.PowerApps.Administration.PowerShell -ErrorAction Stop
-    Import-Module Microsoft.PowerApps.PowerShell -ErrorAction Stop
+    Import-Module Microsoft.PowerApps.Administration.PowerShell -ErrorAction Stop -WarningAction SilentlyContinue
+    Import-Module Microsoft.PowerApps.PowerShell -ErrorAction Stop -WarningAction SilentlyContinue
 
     if ($UseInteractive) {
         Write-Host "  Authenticating with interactive login..." -ForegroundColor Yellow
@@ -313,6 +321,18 @@ try {
     }
 
     Write-Host "  ✓ Authentication successful!" -ForegroundColor Green
+
+    # Get current user's Object ID for co-owner operations
+    Write-Host "  Retrieving your user information..." -ForegroundColor Yellow
+    $script:CurrentUserObjectId = $null
+    try {
+        $currentUser = Get-UsersOrGroupsFromGraph -ObjectId "me" -ErrorAction Stop
+        $script:CurrentUserObjectId = $currentUser.objectId
+        Write-Host "  ✓ User information retrieved" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  ⚠ Could not retrieve user info (co-owner feature may not work)" -ForegroundColor Yellow
+    }
 }
 catch {
     Write-Host "  ✗ Authentication failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -596,39 +616,81 @@ if ($addCoOwner -eq "y" -or $addCoOwner -eq "yes") {
         $result = $searchResults[0]
 
         if ($resourceType -eq "App") {
-            Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName
+            Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
         }
         else {
-            Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName
+            Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
         }
     }
     else {
-        # Multiple results, ask which one
-        Write-Host "`n  Which result? (Enter number 1-$($searchResults.Count), or 'all' for all)" -ForegroundColor White
-        $selection = Read-Host "  Selection"
+        # Multiple results, ask which one(s)
+        Write-Host "`n  Which result(s)?" -ForegroundColor White
+        Write-Host "    • Enter 'all' for all results" -ForegroundColor DarkGray
+        Write-Host "    • Enter a single number (e.g., '3')" -ForegroundColor DarkGray
+        Write-Host "    • Enter multiple numbers separated by commas (e.g., '1,3,5')" -ForegroundColor DarkGray
+        $selection = Read-Host "`n  Selection"
 
         if ($selection -eq "all") {
+            # Add to all results
             foreach ($result in $searchResults) {
                 Write-Host "`nProcessing: $($result.DisplayName)" -ForegroundColor Cyan
 
                 if ($resourceType -eq "App") {
-                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName
+                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
                 }
                 else {
-                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName
+                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
+                }
+            }
+        }
+        elseif ($selection -match ',') {
+            # Multiple specific results (e.g., "1,3,5")
+            $selectedIndices = $selection -split ',' | ForEach-Object { $_.Trim() }
+            $validSelections = @()
+
+            foreach ($idx in $selectedIndices) {
+                if ($idx -match '^\d+$') {
+                    $index = [int]$idx - 1
+                    if ($index -ge 0 -and $index -lt $searchResults.Count) {
+                        $validSelections += $index
+                    }
+                    else {
+                        Write-Host "  ⚠ Skipping invalid index: $idx" -ForegroundColor Yellow
+                    }
+                }
+                else {
+                    Write-Host "  ⚠ Skipping invalid input: $idx" -ForegroundColor Yellow
+                }
+            }
+
+            if ($validSelections.Count -eq 0) {
+                Write-Host "  ✗ No valid selections found" -ForegroundColor Red
+            }
+            else {
+                foreach ($index in $validSelections) {
+                    $result = $searchResults[$index]
+                    Write-Host "`nProcessing: $($result.DisplayName)" -ForegroundColor Cyan
+
+                    if ($resourceType -eq "App") {
+                        Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
+                    }
+                    else {
+                        Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
+                    }
                 }
             }
         }
         elseif ($selection -match '^\d+$') {
+            # Single result
             $index = [int]$selection - 1
             if ($index -ge 0 -and $index -lt $searchResults.Count) {
                 $result = $searchResults[$index]
 
                 if ($resourceType -eq "App") {
-                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName
+                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
                 }
                 else {
-                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName
+                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
                 }
             }
             else {
@@ -636,7 +698,7 @@ if ($addCoOwner -eq "y" -or $addCoOwner -eq "yes") {
             }
         }
         else {
-            Write-Host "  ✗ Invalid selection" -ForegroundColor Red
+            Write-Host "  ✗ Invalid selection format" -ForegroundColor Red
         }
     }
 }
