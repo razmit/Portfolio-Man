@@ -325,13 +325,40 @@ try {
     # Get current user's Object ID for co-owner operations
     Write-Host "  Retrieving your user information..." -ForegroundColor Yellow
     $script:CurrentUserObjectId = $null
+    $script:CurrentUserEmail = $null
+
     try {
         $currentUser = Get-UsersOrGroupsFromGraph -ObjectId "me" -ErrorAction Stop
         $script:CurrentUserObjectId = $currentUser.objectId
-        Write-Host "  ✓ User information retrieved" -ForegroundColor Green
+        $script:CurrentUserEmail = $currentUser.userPrincipalName
+        Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
     }
     catch {
-        Write-Host "  ⚠ Could not retrieve user info (co-owner feature may not work)" -ForegroundColor Yellow
+        Write-Host "  ⚠ Could not automatically retrieve user info" -ForegroundColor Yellow
+        Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+        Write-Host "`n  This is needed for the co-owner feature." -ForegroundColor Yellow
+        Write-Host "  Would you like to provide your email manually? (y/n)" -ForegroundColor White
+
+        $manualInput = Read-Host "  "
+
+        if ($manualInput -eq "y" -or $manualInput -eq "yes") {
+            $userEmail = Read-Host "`n  Enter your email/UPN (e.g., user@domain.com)"
+
+            try {
+                Write-Host "  Looking up user information..." -ForegroundColor Yellow
+                $lookedUpUser = Get-UsersOrGroupsFromGraph -ObjectId $userEmail -ErrorAction Stop
+                $script:CurrentUserObjectId = $lookedUpUser.objectId
+                $script:CurrentUserEmail = $lookedUpUser.userPrincipalName
+                Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "  ✗ Could not look up user: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "  Co-owner feature will not be available" -ForegroundColor DarkGray
+            }
+        }
+        else {
+            Write-Host "  Skipping user lookup. Co-owner feature will not be available" -ForegroundColor DarkGray
+        }
     }
 }
 catch {
