@@ -7,19 +7,14 @@
 #   - Search by name (partial match) or full URL
 #   - Automatically extracts environment from URL
 #   - Priority search: production environment first, then custom order
-#   - Displays comprehensive resource information
-#   - Optional co-owner addition for editing access
+#   - Displays comprehensive resource information including suspension/error states
 #
 # Usage:
 #   .\Find-PowerPlatformResource.ps1
 #   .\Find-PowerPlatformResource.ps1 -ClientId "your-azure-app-id"
-#   .\Find-PowerPlatformResource.ps1 -UserObjectId "your-object-id-guid"
-#   .\Find-PowerPlatformResource.ps1 -ClientId "your-azure-app-id" -UserObjectId "your-object-id-guid"
 #
 # Parameters:
 #   -ClientId: (Optional) Azure AD app registration ID for authentication
-#   -UserObjectId: (Optional) Your Azure AD Object ID (GUID) for co-owner operations
-#                  Find this in Azure Portal -> Azure AD -> Users -> Your Profile
 #
 # Requirements:
 #   - Microsoft.PowerApps.Administration.PowerShell module
@@ -28,10 +23,7 @@
 
 param(
     [Parameter(Mandatory=$false)]
-    [string]$ClientId,
-
-    [Parameter(Mandatory=$false)]
-    [string]$UserObjectId
+    [string]$ClientId
 )
 
 # ============================================================================
@@ -221,6 +213,39 @@ function Search-CloudFlow {
                 # Search for specific flow by ID
                 $flow = Get-AdminFlow -FlowName $SpecificFlowId -EnvironmentName $envId -ErrorAction SilentlyContinue
                 if ($flow) {
+                    # Determine actual state
+                    $flowState = "Unknown"
+                    $stateColor = "Gray"
+
+                    if ($flow.Internal.properties.state) {
+                        $actualState = $flow.Internal.properties.state
+
+                        if ($actualState -eq "Suspended") {
+                            $flowState = "Suspended (Error)"
+                            $stateColor = "Red"
+                        }
+                        elseif ($actualState -eq "Started" -and $flow.Enabled) {
+                            $flowState = "Enabled"
+                            $stateColor = "Green"
+                        }
+                        elseif ($actualState -eq "Stopped" -or -not $flow.Enabled) {
+                            $flowState = "Disabled"
+                            $stateColor = "Yellow"
+                        }
+                        else {
+                            $flowState = $actualState
+                            $stateColor = "White"
+                        }
+                    }
+                    elseif ($flow.Enabled) {
+                        $flowState = "Enabled"
+                        $stateColor = "Green"
+                    }
+                    else {
+                        $flowState = "Disabled"
+                        $stateColor = "Yellow"
+                    }
+
                     $results += [PSCustomObject]@{
                         EnvironmentId = $envId
                         EnvironmentName = $envName
@@ -230,7 +255,8 @@ function Search-CloudFlow {
                         OwnerEmail = $flow.CreatedBy.email
                         CreatedTime = $flow.CreatedTime
                         LastModifiedTime = $flow.LastModifiedTime
-                        State = $flow.Enabled
+                        State = $flowState
+                        StateColor = $stateColor
                         TriggerType = $flow.Internal.properties.definitionSummary.triggers.PSObject.Properties.Name -join ", "
                         EditUrl = "https://make.powerautomate.com/environments/$envId/flows/$($flow.FlowName)/details"
                     }
@@ -242,6 +268,39 @@ function Search-CloudFlow {
                 $matchedFlows = $flows | Where-Object { $_.DisplayName -like "*$SearchTerm*" }
 
                 foreach ($flow in $matchedFlows) {
+                    # Determine actual state
+                    $flowState = "Unknown"
+                    $stateColor = "Gray"
+
+                    if ($flow.Internal.properties.state) {
+                        $actualState = $flow.Internal.properties.state
+
+                        if ($actualState -eq "Suspended") {
+                            $flowState = "Suspended (Error)"
+                            $stateColor = "Red"
+                        }
+                        elseif ($actualState -eq "Started" -and $flow.Enabled) {
+                            $flowState = "Enabled"
+                            $stateColor = "Green"
+                        }
+                        elseif ($actualState -eq "Stopped" -or -not $flow.Enabled) {
+                            $flowState = "Disabled"
+                            $stateColor = "Yellow"
+                        }
+                        else {
+                            $flowState = $actualState
+                            $stateColor = "White"
+                        }
+                    }
+                    elseif ($flow.Enabled) {
+                        $flowState = "Enabled"
+                        $stateColor = "Green"
+                    }
+                    else {
+                        $flowState = "Disabled"
+                        $stateColor = "Yellow"
+                    }
+
                     $results += [PSCustomObject]@{
                         EnvironmentId = $envId
                         EnvironmentName = $envName
@@ -251,7 +310,8 @@ function Search-CloudFlow {
                         OwnerEmail = $flow.CreatedBy.email
                         CreatedTime = $flow.CreatedTime
                         LastModifiedTime = $flow.LastModifiedTime
-                        State = $flow.Enabled
+                        State = $flowState
+                        StateColor = $stateColor
                         TriggerType = $flow.Internal.properties.definitionSummary.triggers.PSObject.Properties.Name -join ", "
                         EditUrl = "https://make.powerautomate.com/environments/$envId/flows/$($flow.FlowName)/details"
                     }
@@ -275,43 +335,6 @@ function Search-CloudFlow {
     return $results
 }
 
-function Add-AsCoOwner {
-    param(
-        [string]$ResourceType,
-        [string]$EnvironmentId,
-        [string]$ResourceId,
-        [string]$ResourceName
-    )
-
-    Write-Host "`nAdding you as co-owner..." -ForegroundColor Yellow
-
-    # Check if we have user object ID
-    if ([string]::IsNullOrEmpty($script:CurrentUserObjectId)) {
-        Write-Host "✗ Cannot add as co-owner: User information not available" -ForegroundColor Red
-        Write-Host "  Try re-running the script with proper authentication" -ForegroundColor DarkGray
-        return $false
-    }
-
-    try {
-        if ($ResourceType -eq "App") {
-            Set-AdminPowerAppRoleAssignment -AppName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId $script:CurrentUserObjectId -ErrorAction Stop
-            Write-Host "✓ Successfully added as co-owner of the app" -ForegroundColor Green
-        }
-        elseif ($ResourceType -eq "Flow") {
-            Set-AdminFlowOwnerRole -FlowName $ResourceId -EnvironmentName $EnvironmentId -RoleName CanEdit -PrincipalType User -PrincipalObjectId $script:CurrentUserObjectId -ErrorAction Stop
-            Write-Host "✓ Successfully added as co-owner of the flow" -ForegroundColor Green
-        }
-
-        Write-Host "  You can now edit this resource!" -ForegroundColor DarkGray
-        return $true
-    }
-    catch {
-        Write-Host "✗ Failed to add as co-owner: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "  This may be due to insufficient permissions or the resource being managed" -ForegroundColor DarkGray
-        return $false
-    }
-}
-
 # ============================================================================
 # AUTHENTICATION
 # ============================================================================
@@ -332,63 +355,6 @@ try {
     }
 
     Write-Host "  ✓ Authentication successful!" -ForegroundColor Green
-
-    # Get current user's Object ID for co-owner operations
-    $script:CurrentUserObjectId = $null
-    $script:CurrentUserEmail = $null
-
-    # Check if Object ID was provided as parameter
-    if (-not [string]::IsNullOrEmpty($UserObjectId)) {
-        Write-Host "  Using provided User Object ID: $UserObjectId" -ForegroundColor Green
-        $script:CurrentUserObjectId = $UserObjectId
-    }
-    else {
-        Write-Host "  Retrieving your user information..." -ForegroundColor Yellow
-
-        try {
-            $currentUser = Get-UsersOrGroupsFromGraph -ObjectId "me" -ErrorAction Stop
-            $script:CurrentUserObjectId = $currentUser.objectId
-            $script:CurrentUserEmail = $currentUser.userPrincipalName
-            Write-Host "  ✓ User information retrieved: $($script:CurrentUserEmail)" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "  ⚠ Could not automatically retrieve user info" -ForegroundColor Yellow
-            Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor DarkGray
-            Write-Host "`n  This is needed for the co-owner feature." -ForegroundColor Yellow
-            Write-Host "  You can provide your Object ID as a parameter: -UserObjectId 'your-guid'" -ForegroundColor Cyan
-            Write-Host "`n  Would you like to provide your Object ID now? (y/n)" -ForegroundColor White
-
-            $manualInput = Read-Host "  "
-
-            if ($manualInput -eq "y" -or $manualInput -eq "yes") {
-                Write-Host "`n  How to find your Object ID:" -ForegroundColor Yellow
-                Write-Host "    1. Go to https://portal.azure.com" -ForegroundColor DarkGray
-                Write-Host "    2. Navigate to Azure Active Directory -> Users" -ForegroundColor DarkGray
-                Write-Host "    3. Search for your name and click on it" -ForegroundColor DarkGray
-                Write-Host "    4. Copy the 'Object ID' (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)" -ForegroundColor DarkGray
-                Write-Host "`n    OR use Power Platform Admin Center:" -ForegroundColor Yellow
-                Write-Host "    1. Go to https://admin.powerplatform.microsoft.com" -ForegroundColor DarkGray
-                Write-Host "    2. Your Object ID may be visible in user settings" -ForegroundColor DarkGray
-
-                $objectId = Read-Host "`n  Enter your Object ID (GUID format)"
-
-                # Validate GUID format
-                try {
-                    $guidTest = [System.Guid]::Parse($objectId)
-                    $script:CurrentUserObjectId = $objectId
-                    Write-Host "  ✓ Object ID accepted!" -ForegroundColor Green
-                    Write-Host "    Tip: Next time, use -UserObjectId '$objectId' parameter to skip this step" -ForegroundColor Cyan
-                }
-                catch {
-                    Write-Host "  ✗ Invalid GUID format" -ForegroundColor Red
-                    Write-Host "  Co-owner feature will not be available" -ForegroundColor DarkGray
-                }
-            }
-            else {
-                Write-Host "  Skipping user lookup. Co-owner feature will not be available" -ForegroundColor DarkGray
-            }
-        }
-    }
 }
 catch {
     Write-Host "  ✗ Authentication failed: $($_.Exception.Message)" -ForegroundColor Red
@@ -648,118 +614,13 @@ foreach ($result in $searchResults) {
         Write-InfoLine "Environment ID" $result.EnvironmentId "DarkGray"
         Write-InfoLine "Owner" "$($result.Owner)" "White"
         Write-InfoLine "Trigger Type" $result.TriggerType "White"
-        Write-InfoLine "State" $(if ($result.State) { "Enabled" } else { "Disabled" }) $(if ($result.State) { "Green" } else { "Red" })
+        Write-InfoLine "State" $result.State $result.StateColor
         Write-InfoLine "Created" $result.CreatedTime "White"
         Write-InfoLine "Last Modified" $result.LastModifiedTime "White"
         Write-InfoLine "Edit URL" $result.EditUrl "Yellow"
     }
 
     $resultIndex++
-}
-
-# ============================================================================
-# PROMPT: ADD AS CO-OWNER
-# ============================================================================
-
-Write-SectionHeader "CO-OWNER ACCESS"
-
-Write-Host "`n  Would you like to add yourself as a co-owner for editing access?" -ForegroundColor White
-$addCoOwner = Read-Host "  (y/n)"
-
-if ($addCoOwner -eq "y" -or $addCoOwner -eq "yes") {
-    if ($searchResults.Count -eq 1) {
-        # Single result, add directly
-        $result = $searchResults[0]
-
-        if ($resourceType -eq "App") {
-            Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
-        }
-        else {
-            Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
-        }
-    }
-    else {
-        # Multiple results, ask which one(s)
-        Write-Host "`n  Which result(s)?" -ForegroundColor White
-        Write-Host "    • Enter 'all' for all results" -ForegroundColor DarkGray
-        Write-Host "    • Enter a single number (e.g., '3')" -ForegroundColor DarkGray
-        Write-Host "    • Enter multiple numbers separated by commas (e.g., '1,3,5')" -ForegroundColor DarkGray
-        $selection = Read-Host "`n  Selection"
-
-        if ($selection -eq "all") {
-            # Add to all results
-            foreach ($result in $searchResults) {
-                Write-Host "`nProcessing: $($result.DisplayName)" -ForegroundColor Cyan
-
-                if ($resourceType -eq "App") {
-                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
-                }
-                else {
-                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
-                }
-            }
-        }
-        elseif ($selection -match ',') {
-            # Multiple specific results (e.g., "1,3,5")
-            $selectedIndices = $selection -split ',' | ForEach-Object { $_.Trim() }
-            $validSelections = @()
-
-            foreach ($idx in $selectedIndices) {
-                if ($idx -match '^\d+$') {
-                    $index = [int]$idx - 1
-                    if ($index -ge 0 -and $index -lt $searchResults.Count) {
-                        $validSelections += $index
-                    }
-                    else {
-                        Write-Host "  ⚠ Skipping invalid index: $idx" -ForegroundColor Yellow
-                    }
-                }
-                else {
-                    Write-Host "  ⚠ Skipping invalid input: $idx" -ForegroundColor Yellow
-                }
-            }
-
-            if ($validSelections.Count -eq 0) {
-                Write-Host "  ✗ No valid selections found" -ForegroundColor Red
-            }
-            else {
-                foreach ($index in $validSelections) {
-                    $result = $searchResults[$index]
-                    Write-Host "`nProcessing: $($result.DisplayName)" -ForegroundColor Cyan
-
-                    if ($resourceType -eq "App") {
-                        Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
-                    }
-                    else {
-                        Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
-                    }
-                }
-            }
-        }
-        elseif ($selection -match '^\d+$') {
-            # Single result
-            $index = [int]$selection - 1
-            if ($index -ge 0 -and $index -lt $searchResults.Count) {
-                $result = $searchResults[$index]
-
-                if ($resourceType -eq "App") {
-                    Add-AsCoOwner -ResourceType "App" -EnvironmentId $result.EnvironmentId -ResourceId $result.AppName -ResourceName $result.DisplayName | Out-Null
-                }
-                else {
-                    Add-AsCoOwner -ResourceType "Flow" -EnvironmentId $result.EnvironmentId -ResourceId $result.FlowName -ResourceName $result.DisplayName | Out-Null
-                }
-            }
-            else {
-                Write-Host "  ✗ Invalid selection" -ForegroundColor Red
-            }
-        }
-        else {
-            Write-Host "  ✗ Invalid selection format" -ForegroundColor Red
-        }
-    }
-}
-else {
-    Write-Host "  Skipping co-owner addition" -ForegroundColor DarkGray
 }
 
 # ============================================================================
