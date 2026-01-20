@@ -35,7 +35,7 @@ param(
 # ============================================================================
 
 # Target site URL
-$Global:SiteUrl = "https://companynet.sharepoint.com/sites/solutions-uat/vaap"
+$Global:SiteUrl = "https://companynet.sharepoint.com/sites/solutions/vaap"
 
 # Target list GUIDs (the 5 VAAP lists that require maintenance)
 $Global:TargetListGuids = @(
