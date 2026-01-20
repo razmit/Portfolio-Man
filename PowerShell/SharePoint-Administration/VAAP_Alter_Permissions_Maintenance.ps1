@@ -35,16 +35,16 @@ param(
 # ============================================================================
 
 # Target site URL
-$Global:SiteUrl = "https://companynet.sharepoint.com/sites/solutions"
+$Global:SiteUrl = "https://companynet.sharepoint.com/sites/solutions-uat/vaap"
 
 # Target list GUIDs (the 5 VAAP lists that require maintenance)
 $Global:TargetListGuids = @(
-    "8531C4BA-6AD0-4369-8F72-038A90585E11"
-    # Add the other 4 list GUIDs here:
-    # "GUID-2-HERE",
-    # "GUID-3-HERE",
-    # "GUID-4-HERE",
-    # "GUID-5-HERE"
+    "8531C4BA-6AD0-4369-8F72-038A90585E11",
+    "ACA202CE-BB34-4BC2-A91C-40BE0B04BBC0",
+    "E055289A-9C09-4DC2-A546-6E2C9B87AFF2",
+    "EDB1FB42-3E67-480D-813E-BE4B95DE7A53",
+    "CEE3B8A5-E9E4-49A0-A346-62E195984783",
+    "28CAD9EC-394F-4B43-8CC0-735D43BC47BB"
 )
 
 # Dynamic path to VAAP-Permissions folder
