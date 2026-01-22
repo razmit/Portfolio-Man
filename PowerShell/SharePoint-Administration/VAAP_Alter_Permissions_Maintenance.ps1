@@ -1,3 +1,4 @@
+# WELCOME TO VAAP-MAN
 # VAAP_Alter_Permissions_Maintenance.ps1
 #
 # Purpose: Temporarily set list permissions to Read-Only for maintenance, with ability to restore
@@ -29,13 +30,13 @@
 #   - Preserves all Full Control permission assignments
 #   - Progress indicators and detailed logging
 #   - Safety confirmations before making changes
-#
-# Author: Created for COMPANY_NAME SharePoint maintenance operations
-# Date: 2025
+
+
+# LATEST PROD TEST: FAILED - 01/21/26
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet("UAT", "Prod")]
+    [ValidateSet("UAT", "Prod", "Dev")]
     [string]$Environment,
 
     [Parameter(Mandatory=$false)]
@@ -54,16 +55,16 @@ param(
 
 # UAT Configuration
 $Global:UATConfig = @{
-    SiteUrl = "https://companynet.sharepoint.com/sites/Solutions-UAT"
+    SiteUrl         = "https://companynet.sharepoint.com/sites/Solutions-UAT/vaap"
     TargetListGuids = @(
-        # Add UAT list GUIDs here:
-        # "UAT-GUID-1",
-        # "UAT-GUID-2",
-        # "UAT-GUID-3",
-        # "UAT-GUID-4",
-        # "UAT-GUID-5"
+        "35F63F45-F603-49DD-A4B3-1278A3BD36A7",
+        "FB10536C-BE08-4165-AA7D-D822509DDD8E",
+        "144DCEA7-5151-4E4F-9064-16969002D940",
+        "52256769-CD2A-4622-8912-F40EAF74D7EB",
+        "39C261AB-CC72-4932-9D6D-53F0380E76C5",
+        "6E0204EF-C6C8-453C-83E4-F1CA4BE96B0B"
     )
-    PageNames = @(
+    PageNames       = @(
         "Audit-Assist.aspx",
         "AuditAssistPortal.aspx",
         "Tracker.aspx"
@@ -72,14 +73,31 @@ $Global:UATConfig = @{
 
 # Prod Configuration
 $Global:ProdConfig = @{
-    SiteUrl = "https://companynet.sharepoint.com/sites/solutions"
+    SiteUrl         = "https://companynet.sharepoint.com/sites/solutions/vaap"
     TargetListGuids = @(
-        "8531C4BA-6AD0-4369-8F72-038A90585E11"
-        # Add the other 4 Prod list GUIDs here:
-        # "PROD-GUID-2",
-        # "PROD-GUID-3",
-        # "PROD-GUID-4",
-        # "PROD-GUID-5"
+        "8531C4BA-6AD0-4369-8F72-038A90585E11",
+        "ACA202CE-BB34-4BC2-A91C-40BE0B04BBC0",
+        "E055289A-9C09-4DC2-A546-6E2C9B87AFF2",
+        "EDB1FB42-3E67-480D-813E-BE4B95DE7A53",
+        "CEE3B8A5-E9E4-49A0-A346-62E195984783",
+        "28CAD9EC-394F-4B43-8CC0-735D43BC47BB"
+    )
+    PageNames       = @(
+        "Audit-Assist.aspx",
+        "AuditAssistPortal.aspx",
+        "Tracker.aspx"
+    )
+}
+
+$Global:DevConfig = @{
+    SiteUrl         = "https://companynet.sharepoint.com/sites/solutions-dev/vaap"
+    TargetListGuids = @(
+        "f64b3c30-e114-457f-b56d-6952748e1699"
+        "edf92db5-42f6-40ee-82da-42764ba6aeb4"
+        "07e691ae-957f-450b-be10-4b66bf418bb9"
+        "86bf3d4a-5f3e-4db7-87d3-7d8e71ed9a9c"
+        "e5c0eebe-ea01-4746-a5e9-dae3237abf13"
+        "78e9298a-1c03-42af-8073-3f282a62fa6a"
     )
     PageNames = @(
         "Audit-Assist.aspx",
@@ -89,7 +107,7 @@ $Global:ProdConfig = @{
 }
 
 # Set active configuration based on environment parameter
-$Global:Config = if ($Environment -eq "UAT") { $Global:UATConfig } else { $Global:ProdConfig }
+$Global:Config = if ($Environment -eq "UAT") { $Global:UATConfig } elseif ($Environment -eq "Prod") { $Global:ProdConfig } elseif ($Environment -eq "Dev") {$Global:DevConfig}
 $Global:SiteUrl = $Global:Config.SiteUrl
 $Global:TargetListGuids = $Global:Config.TargetListGuids
 $Global:PageNames = $Global:Config.PageNames
@@ -708,9 +726,45 @@ function Invoke-RestoreMode {
 # MAIN EXECUTION
 # ============================================================================
 
+# ASCII Art because why not
+Clear-Host
+
+$menu = @'
++--------------------------------------------------+
+|                                                  |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⣤⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀               |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⠟⠉⠉⠉⠉⠉⠉⠉⠙⠻⢶⣄⠀⠀⠀⠀⠀               |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⡏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠙⣷⡀⠀⠀⠀               |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⡟⠀⣠⣶⠛⠛⠛⠛⠛⠛⠳⣦⡀⠀⠘⣿⡄⠀⠀               |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⠁⠀⢹⣿⣦⣀⣀⣀⣀⣀⣠⣼⡇⠀⠀⠸⣷⠀⠀               |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⡏⠀⠀⠀⠉⠛⠿⠿⠿⠿⠛⠋⠁⠀⠀⠀⠀ ⣿                |
+|              ⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⢻⡇              |
+|             ⣸⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⢸⡇⠀             |
+|     ⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⢸⣧      ⠀      |
+|     ⠀⠀⠀⠀⠀⠀⠀⢸⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ⠈⣿      ⠀      |
+|     ⠀⠀⠀⠀⠀⠀⠀⣾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⠀ ⣿      ⠀      |
+|     ⠀⠀⠀⠀⠀⠀⠀⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ⠀⠀⠀ ⠀⣿      ⠀      |
+|     ⠀⠀⠀⠀⠀⠀⢰⣿⠀⠀⠀⠀⣠⡶⠶⠿⠿⠿⠿⢷⣦⠀⠀⠀⠀⠀    ⣿⠀             |
+|     ⠀⠀⣀⣀⣀⠀⣸⡇⠀⠀⠀⠀⣿⡀⠀⠀⠀⠀⠀⠀⣿⡇⠀⠀⠀⠀⠀  ⠀⣿⠀             |
+|     ⣠⡿⠛⠛⠛⠛⠻⠀⠀⠀⠀⠀⢸⣇⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⠀⠀⠀ ⠀ ⣿⠀             |
+|     ⢻⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⡟⠀⠀⢀⣤⣤⣴⣿⠀⠀⠀⠀⠀⠀  ⠀⣿⠀             |
+|     ⠈⠙⢷⣶⣦⣤⣤⣤⣴⣶⣾⠿⠛⠁⢀⣶⡟⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡟⠀               |
+|                    ⠈⣿⣆⡀⠀⠀⠀⠀⠀⠀⢀⣠⣴⡾⠃⠀              |  
+|                  ⠀⠀⠈⠛⠻⢿⣿⣾⣿⡿⠿⠟⠋⠁⠀⠀⠀               |
+|                                                  |
+|              VAAP-MAN v2.4                  |
+|                                                  |
+|  Welcome to VAAP-MAN, your VAAP       |
+|  maintenance magician.                             |
+|                                                  |
++--------------------------------------------------+
+'@
+
 Write-Host "`n╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "║   VAAP PERMISSIONS & BANNER MAINTENANCE SCRIPT          ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+
+Write-Host $menu -ForegroundColor DarkCyan
 
 Write-Host "`nEnvironment: $Environment" -ForegroundColor Cyan
 
