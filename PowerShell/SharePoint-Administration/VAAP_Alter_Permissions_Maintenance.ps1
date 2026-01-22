@@ -255,8 +255,11 @@ function Add-MaintenanceBanner {
 </div>
 "@
 
-        # Add text web part at the top (section 1, column 1, order 1)
-        Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -Order 1 -ErrorAction Stop
+        # Add a new section at the top for the banner (to avoid full-width section issues)
+        Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ErrorAction Stop
+
+        # Add text web part to the new section (now section 1, column 1)
+        Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
 
         # Publish the page
         Set-PnPPage -Identity $PageName -Publish -ErrorAction Stop
@@ -462,13 +465,26 @@ function Invoke-LockList {
                     $lockedCount++
                 }
                 else {
+                    # Determine if this is a group or user for proper parameter usage
+                    $isGroup = ($principalType -eq "SharePointGroup")
+
                     # Remove existing permission levels
                     foreach ($role in $roleDefinitions) {
-                        Set-PnPListPermission -Identity $ListGuid -User $principalTitle -RemoveRole $role.Name -ErrorAction Stop
+                        if ($isGroup) {
+                            Set-PnPListPermission -Identity $ListGuid -Group $principalTitle -RemoveRole $role.Name -ErrorAction Stop
+                        }
+                        else {
+                            Set-PnPListPermission -Identity $ListGuid -User $principalTitle -RemoveRole $role.Name -ErrorAction Stop
+                        }
                     }
 
                     # Add Read permission
-                    Set-PnPListPermission -Identity $ListGuid -User $principalTitle -AddRole "Read" -ErrorAction Stop
+                    if ($isGroup) {
+                        Set-PnPListPermission -Identity $ListGuid -Group $principalTitle -AddRole "Read" -ErrorAction Stop
+                    }
+                    else {
+                        Set-PnPListPermission -Identity $ListGuid -User $principalTitle -AddRole "Read" -ErrorAction Stop
+                    }
                     Write-Host "    ✓ Set to Read: $principalTitle (Was: $permissionLevels)" -ForegroundColor Green
                     $lockedCount++
                 }
@@ -629,15 +645,28 @@ function Invoke-RestoreMode {
                             # Principal might not have any roles currently
                         }
 
+                        # Determine if this is a group or user for proper parameter usage
+                        $isGroup = ($item.PrincipalType -eq "SharePointGroup")
+
                         # Remove current permissions
                         foreach ($role in $currentRoles) {
-                            Set-PnPListPermission -Identity $listGuid -User $principalTitle -RemoveRole $role -ErrorAction Stop
+                            if ($isGroup) {
+                                Set-PnPListPermission -Identity $listGuid -Group $principalTitle -RemoveRole $role -ErrorAction Stop
+                            }
+                            else {
+                                Set-PnPListPermission -Identity $listGuid -User $principalTitle -RemoveRole $role -ErrorAction Stop
+                            }
                         }
 
                         # Add back original permissions
                         foreach ($permission in $permissionLevels) {
                             if ($permission.Trim() -ne "") {
-                                Set-PnPListPermission -Identity $listGuid -User $principalTitle -AddRole $permission.Trim() -ErrorAction Stop
+                                if ($isGroup) {
+                                    Set-PnPListPermission -Identity $listGuid -Group $principalTitle -AddRole $permission.Trim() -ErrorAction Stop
+                                }
+                                else {
+                                    Set-PnPListPermission -Identity $listGuid -User $principalTitle -AddRole $permission.Trim() -ErrorAction Stop
+                                }
                             }
                         }
 
