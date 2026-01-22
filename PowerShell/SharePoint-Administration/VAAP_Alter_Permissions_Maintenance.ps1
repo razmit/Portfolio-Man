@@ -273,11 +273,26 @@ function Add-MaintenanceBanner {
 </div>
 "@
 
-        # Add a new section at the top for the banner (to avoid full-width section issues)
-        Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ErrorAction Stop
+        # Try to add a new section at the top for the banner
+        try {
+            Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ErrorAction Stop
+            Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
+        }
+        catch {
+            # If adding section fails (e.g., page has complex layout), try alternative approach
+            Write-Host "    ⚠ Standard section add failed, trying alternative method..." -ForegroundColor Yellow
 
-        # Add text web part to the new section (now section 1, column 1)
-        Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
+            # Try adding to section 2 instead (push existing content further down)
+            try {
+                Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ZoneEmphasis 0 -ErrorAction Stop
+                Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
+            }
+            catch {
+                # Last resort: add to bottom and warn user
+                Write-Host "    ⚠ Could not add banner at top, adding to bottom of page..." -ForegroundColor Yellow
+                Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -ErrorAction Stop
+            }
+        }
 
         # Publish the page
         Set-PnPPage -Identity $PageName -Publish -ErrorAction Stop
@@ -666,6 +681,19 @@ function Invoke-RestoreMode {
                         # Determine if this is a group or user for proper parameter usage
                         $isGroup = ($item.PrincipalType -eq "SharePointGroup")
 
+                        # Filter out system-managed permission levels that cannot be manually granted
+                        $systemPermissions = @("Limited Access", "Web-Only Limited Access")
+                        $restorablePermissions = $permissionLevels | Where-Object {
+                            $perm = $_.Trim()
+                            $perm -ne "" -and $perm -notin $systemPermissions
+                        }
+
+                        # Check if any permissions were filtered out
+                        $filteredPerms = $permissionLevels | Where-Object { $_.Trim() -in $systemPermissions }
+                        if ($filteredPerms.Count -gt 0) {
+                            Write-Host "    ⚠ Skipping system-managed permissions: $($filteredPerms -join ', ')" -ForegroundColor DarkYellow
+                        }
+
                         # Remove current permissions
                         foreach ($role in $currentRoles) {
                             if ($isGroup) {
@@ -676,15 +704,13 @@ function Invoke-RestoreMode {
                             }
                         }
 
-                        # Add back original permissions
-                        foreach ($permission in $permissionLevels) {
-                            if ($permission.Trim() -ne "") {
-                                if ($isGroup) {
-                                    Set-PnPListPermission -Identity $listGuid -Group $principalTitle -AddRole $permission.Trim() -ErrorAction Stop
-                                }
-                                else {
-                                    Set-PnPListPermission -Identity $listGuid -User $principalTitle -AddRole $permission.Trim() -ErrorAction Stop
-                                }
+                        # Add back original permissions (excluding system-managed ones)
+                        foreach ($permission in $restorablePermissions) {
+                            if ($isGroup) {
+                                Set-PnPListPermission -Identity $listGuid -Group $principalTitle -AddRole $permission -ErrorAction Stop
+                            }
+                            else {
+                                Set-PnPListPermission -Identity $listGuid -User $principalTitle -AddRole $permission -ErrorAction Stop
                             }
                         }
 
