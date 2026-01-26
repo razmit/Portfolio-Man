@@ -694,6 +694,12 @@ function Invoke-RestoreMode {
                             Write-Host "    ⚠ Skipping system-managed permissions: $($filteredPerms -join ', ')" -ForegroundColor DarkYellow
                         }
 
+                        # Skip if nothing changed (original and current both Read-only)
+                        if ($restorablePermissions.Count -eq 1 -and $restorablePermissions[0] -eq "Read" -and $currentRoles -contains "Read") {
+                            Write-Host "    → No changes needed: $principalTitle already has correct Read permission" -ForegroundColor DarkGray
+                            continue
+                        }
+                        
                         # Remove current permissions
                         foreach ($role in $currentRoles) {
                             if ($isGroup) {
