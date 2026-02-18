@@ -1,7 +1,7 @@
-connect-pnpOnline -Url https://companynet.sharepoint.com/sites/Teams/Leadership/PartnerPrincipal -clientId CLIENT_ID -interactive
+connect-pnpOnline -Url https://companynet.sharepoint.com/sites/IWS_IT_SharePoint_M365_Solutions -clientId CLIENT_ID -interactive
 
 # The file's name
-$fileName = "Canada"
+$fileName = "Discovery"
 
 # Get all document libraries in the site
 $lists = Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 } # 101 is the template ID for document libraries
