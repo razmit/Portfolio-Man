@@ -1,7 +1,7 @@
 # Script to export ALL term sets from the tenant's global term store to a CSV file
 
 # Connect to a site in the tenant with PnP PowerShell
-Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/firm/csr/foundation -clientId CLIENT_ID -interactive
+Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 # Get the taxonomy session
 $taxonomySession = Get-PnPTaxonomySession

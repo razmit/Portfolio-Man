@@ -1,4 +1,4 @@
-Connect-pnpOnline -Url https://companynet.sharepoint.com/sites/IWS_TDMInternal/TDMArchives -clientId CLIENT_ID -interactive
+Connect-pnpOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 $libraryName = "Course Document Sets"
 

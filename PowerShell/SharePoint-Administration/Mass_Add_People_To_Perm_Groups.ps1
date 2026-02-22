@@ -288,7 +288,7 @@ function Process-UserAdditions {
 
         # Validate URL format (in case it's just a site name)
         if ($siteUrl -notmatch "^https://") {
-            $siteUrl = "$tenantUrl/sites/$siteUrl"
+            $siteUrl = "$tenantUrl/sites/SITE_NAME"
         }
 
         Write-Host "`n----------------------------------------" -ForegroundColor Cyan

@@ -1,8 +1,8 @@
 # Source site
-$sourceSite = "https://companynet.sharepoint.com/sites/Resources/IMC/CRMResourceCenter"
+$sourceSite = "https://companynet.sharepoint.com/sites/SITE_NAME"
 
 # Target site
-$targetSite = "https://companynet.sharepoint.com/sites/in_CRMResourceCenter"
+$targetSite = "https://companynet.sharepoint.com/sites/SITE_NAME"
 
 # Connect to the source site
 connect-pnpOnline -Url $sourceSite -clientId CLIENT_ID -interactive

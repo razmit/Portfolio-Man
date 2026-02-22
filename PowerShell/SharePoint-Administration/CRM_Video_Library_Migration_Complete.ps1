@@ -10,9 +10,9 @@
 # ============================================
 
 param(
-    [string]$SourceSiteUrl = "https://companynet.sharepoint.com/sites/Resources/IMC/CRMResourceCenter/",
+    [string]$SourceSiteUrl = "https://companynet.sharepoint.com/sites/SITE_NAME",
     [string]$SourceLibraryName = "CRM Simulation Library",
-    [string]$DestinationSiteUrl = "https://companynet.sharepoint.com/sites/in_CRMResourceCenter",
+    [string]$DestinationSiteUrl = "https://companynet.sharepoint.com/sites/SITE_NAME",
     [string]$DestinationLibraryName = "CRM Video Library",
     [string]$ClientId = "CLIENT_ID",
     [switch]$WhatIf = $false  # Use -WhatIf to preview without making changes

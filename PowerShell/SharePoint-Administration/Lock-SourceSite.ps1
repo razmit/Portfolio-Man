@@ -4,7 +4,7 @@
 # Exception: Preserves Full Control and Full Control - No Site Creation permissions
 #
 # Usage:
-#   .\Lock-SourceSite.ps1 -SiteUrl "https://tenant.sharepoint.com/sites/SourceSite" [-DryRun]
+#   .\Lock-SourceSite.ps1 -SiteUrl "https://tenant.sharepoint.com/sites/SITE_NAME" [-DryRun]
 #
 # Parameters:
 #   -SiteUrl   : The source SharePoint site URL to lock down

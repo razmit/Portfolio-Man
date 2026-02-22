@@ -1,4 +1,4 @@
-Connect-PnPOnline -Url "https://companynet-admin.sharepoint.com/sites/Teams/NatLPD/SourceContent/" -clientId CLIENT_ID -Interactive 
+Connect-PnPOnline -Url "https://companynet-admin.sharepoint.com/sites/SITE_NAME" -clientId CLIENT_ID -Interactive 
 
 $libraryName = "YourLibraryName"
 $list = Get-PnPList -Identity $libraryName

@@ -1,4 +1,4 @@
-Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/in_CRMResourceCenter -clientId CLIENT_ID -interactive
+Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 $libraryName = "CRM video library"
 
@@ -310,7 +310,7 @@ Write-Host "3. Remove Video content type (run cleanup script)" -ForegroundColor 
 # foreach ($videoFile in $videoFiles) {
 #     $sourceUrl = $videoFile.FieldValues.FileRef
 #     $fileName = $videoFile.FieldValues.FileLeafRef
-#     $targetUrl = "/sites/in_CRMResourceCenter/VideoLibraryClean/$fileName"
+#     $targetUrl = "/sites/SITE_NAME"
     
 #     Write-Host "Copying: $fileName" -ForegroundColor Cyan
     

@@ -5,7 +5,7 @@ $tenant = "companynet"
 
 # Build OneDrive URL
 $username = $userEmail.Replace("@", "_").Replace(".", "_")
-$oneDriveUrl = "https://companynet-my.sharepoint.com/personal/XXXXX_company_old_rsm_net"
+$oneDriveUrl = "https://companynet-my.sharepoint.com/personal/SITE_NAME"
 
 Write-Host "=== Comprehensive OneDrive Search ===" -ForegroundColor Cyan
 Write-Host "User: $userEmail"

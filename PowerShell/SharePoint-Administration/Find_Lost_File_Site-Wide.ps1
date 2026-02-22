@@ -1,4 +1,4 @@
-connect-pnpOnline -Url https://companynet.sharepoint.com/sites/IWS_IT_SharePoint_M365_Solutions -clientId CLIENT_ID -interactive
+connect-pnpOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 # The file's name
 $fileName = "Discovery"

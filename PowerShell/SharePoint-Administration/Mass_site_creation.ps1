@@ -48,7 +48,7 @@ function New-SubSite {
         $SubSiteTitles
     )
     
-    $newParentSiteUrl = "https://companynet.sharepoint.com/sites/IWS_ORM_PCAOB_Inspections"
+    $newParentSiteUrl = "https://companynet.sharepoint.com/sites/SITE_NAME"
     
     Connect-PnPOnline -Url $newParentSiteUrl -clientId CLIENT_ID -interactive
     
@@ -158,7 +158,7 @@ foreach ($row in $excelData) {
 $titleCounter = 0
 $urlCounter = 0
 
-$urlPrefix = "https://companynet.sharepoint.com/sites/IWS_ORM_PCAOB_Inspections"
+$urlPrefix = "https://companynet.sharepoint.com/sites/SITE_NAME"
 
 $updatedData = $excelData | ForEach-Object {
     [PSCustomObject]@{

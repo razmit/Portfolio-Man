@@ -1,4 +1,4 @@
-Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/DDSAppDevandIntegration -clientId CLIENT_ID -interactive
+Connect-PnPOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 $restoreDate = Get-Date "2026-01-05"
 $modifiedAfter = $restoreDate.Date

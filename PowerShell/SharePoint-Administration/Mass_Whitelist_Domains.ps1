@@ -15,7 +15,7 @@ foreach ($site in $sites) {
     $rawUrl = $site.'TDLink'
     
     # Clean the URL - extract only up to /td_XXXXXXX
-    if ($rawUrl -match "(https://[^/]+/teams/td_\d+)") {
+    if ($rawUrl -match "(https://[^/]+/teams/SITE_NAME)") {
         $siteUrl = $matches[1]
         # Write-Host "`nCleaned URL: $rawUrl" -ForegroundColor Gray
         # Write-Host "         to: $siteUrl" -ForegroundColor Cyan

@@ -1,5 +1,5 @@
 # Connect to Rolin Forgeworld Site for testing
-Connect-pnpOnline -Url https://companynet.sharepoint.com/sites/RolinForgeworld -clientId CLIENT_ID -interactive
+Connect-pnpOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 ### Make sure file is not checked out by another user
 

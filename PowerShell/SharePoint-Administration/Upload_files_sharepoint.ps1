@@ -1,6 +1,6 @@
 # Site to where the file is going to be uploaded
 
-$url = "https://companynet.sharepoint.com/sites/RolinForgeworld" 
+$url = "https://companynet.sharepoint.com/sites/SITE_NAME" 
 
 # Standard connection command 
 Connect-PnPOnline -Url $url -clientId CLIENT_ID -interactive

@@ -1,5 +1,5 @@
 # Configuration
-$siteUrl = "https://companynet.sharepoint.com/sites/in_CRMResourceCenter"
+$siteUrl = "https://companynet.sharepoint.com/sites/SITE_NAME"
 Connect-PnPOnline -Url $siteUrl -clientId CLIENT_ID -interactive
 
 $libraryName = "CRM Resource Library"

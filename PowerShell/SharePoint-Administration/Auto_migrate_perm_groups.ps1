@@ -643,9 +643,9 @@ function Get-GroupMembers {
 # Helper function to transform source paths to destination paths (handles Classic → Modern flattening)
 function Convert-SourcePathToDestination {
     param (
-        [string]$SourcePath,          # e.g., "/sites/Teams/Audit/NPSG/MAPS/ProjectA"
-        [string]$SourceRootUrl,       # e.g., "https://tenant.sharepoint.com/sites/Teams/Audit/NPSG/MAPS"
-        [string]$DestinationRootUrl   # e.g., "https://tenant.sharepoint.com/sites/MAPS"
+        [string]$SourcePath,          # e.g., "/sites/SITE_NAME"
+        [string]$SourceRootUrl,       # e.g., "https://tenant.sharepoint.com/sites/SITE_NAME"
+        [string]$DestinationRootUrl   # e.g., "https://tenant.sharepoint.com/sites/SITE_NAME"
     )
 
     # Extract ServerRelativeUrl from full URLs if needed
@@ -1993,7 +1993,7 @@ function Get-ManualSiteUrls {
 
     # Get SOURCE URL
     Write-Host "Enter the full SOURCE site URL (including subsites):" -ForegroundColor Yellow
-    Write-Host "Example: https://companynet.sharepoint.com/sites/Teams/Audit/NPSG/MAPS" -ForegroundColor DarkGray
+    Write-Host "Example: https://companynet.sharepoint.com/sites/SITE_NAME" -ForegroundColor DarkGray
     $sourceUrl = Read-Host "SOURCE URL"
 
     # Validate URL format
@@ -2028,7 +2028,7 @@ function Get-ManualSiteUrls {
     }
 
     # Auto-construct destination URL
-    $autoDestUrl = "$tenantUrl/sites/$matchingSegment"
+    $autoDestUrl = "$tenantUrl/sites/SITE_NAME"
 
     Write-Host "`n--- AUTO-CONSTRUCTED DESTINATION ---" -ForegroundColor Cyan
     Write-Host "Based on your inputs, the destination would be:" -ForegroundColor Yellow
@@ -2043,7 +2043,7 @@ function Get-ManualSiteUrls {
         $destUrl = $autoDestUrl
     } else {
         Write-Host "`nEnter the full DESTINATION site URL:" -ForegroundColor Yellow
-        Write-Host "Example: https://companynet.sharepoint.com/sites/MAPS" -ForegroundColor DarkGray
+        Write-Host "Example: https://companynet.sharepoint.com/sites/SITE_NAME" -ForegroundColor DarkGray
         $destUrl = Read-Host "DESTINATION URL"
 
         if ($destUrl -notmatch '^https?://') {
@@ -2190,7 +2190,7 @@ do {
         Write-Host "    Use this for simple migrations between site collections" -ForegroundColor DarkGray
         Write-Host "`n[2] Manual URL entry (for subsites and Classic→Modern flattening)" -ForegroundColor Yellow
         Write-Host "    Use this when migrating deep subsites to flat Modern sites" -ForegroundColor DarkGray
-        Write-Host "    Example: /sites/Teams/Audit/NPSG/MAPS → /sites/MAPS" -ForegroundColor DarkGray
+        Write-Host "    Example: /sites/SITE_NAME → /sites/SITE_NAME" -ForegroundColor DarkGray
 
         $selectionMethod = Read-Host "`nYour choice (1 or 2)"
 

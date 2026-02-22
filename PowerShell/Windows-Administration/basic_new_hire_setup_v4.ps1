@@ -20,8 +20,8 @@ $NewBookmarks = @(
     @{ "name" = "DASH"; "url" = "https://dash.company.com/now/nav/ui/classic/params/target/welcome.do" }
     @{ "name" = "Workday"; "url" = "https://www.myworkday.com/rsm/d/pex/home.htmld" }
     @{ "name" = "Owning My Future"; "url" = "https://sso.company.com/idp/startSSO.ping?PartnerSpId=CSOD_SSO&TargetResource=" }
-    @{ "name" = "COMPANY_NAME US-El Salvador Team Site"; "url" = "https://companynet.sharepoint.com/sites/Teams/Consulting/elsalvadorteam/Pages/default.aspx" }
-    @{ "name" = "COMPANY_NAME US SV Office"; "url" = "https://companynet.sharepoint.com/sites/Teams/Consulting/elsalvadorteam/Pages/COMPANY_NAME-US-SV-Office.aspx" }
+    @{ "name" = "COMPANY_NAME US-El Salvador Team Site"; "url" = "https://companynet.sharepoint.com/sites/SITE_NAME" }
+    @{ "name" = "COMPANY_NAME US SV Office"; "url" = "https://companynet.sharepoint.com/sites/SITE_NAME" }
     @{ "name" = "Secret Server"; "url" = "https://secret.company_old.rsm.net/dashboard.aspx" }
     @{ "name" = "US-El Salvador Careers"; "url" = "https://company.com/careers/el-salvador.html" }
 )

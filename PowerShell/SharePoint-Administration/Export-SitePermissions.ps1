@@ -4,7 +4,7 @@
 # NO migration - just data collection for manual setup
 #
 # Usage:
-#   .\Export-SitePermissions.ps1 -SiteUrl "https://tenant.sharepoint.com/sites/YourSite"
+#   .\Export-SitePermissions.ps1 -SiteUrl "https://tenant.sharepoint.com/sites/SITE_NAME"
 #
 # Output:
 #   - CSV file with all group details
