@@ -15,7 +15,7 @@ $clientId = "CLIENT_ID"
 $tenantUrl = "https://companynet.sharepoint.com"
 
 # Define target groups (can be modified as needed)
-$targetGroups = @("National Tax PMO Owners", "Tax Services Project Owners")
+$targetGroups = @("Perm_Group_1", "Perm_Group_2")
 
 # Initialize result tracking
 $results = @()

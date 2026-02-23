@@ -55,7 +55,7 @@ foreach ($group in $termStore) {
 }
 
 # Export the report to a CSV file
-$exportPath = "C:\Users\E095713\Downloads\TermStore-Reports\AllTermSets-" + (Get-Date -Format "dd-MM-yyyy") + ".csv"
+$exportPath = "C:\Users\LOCAL_USER\Downloads\TermStore-Reports\AllTermSets-" + (Get-Date -Format "dd-MM-yyyy") + ".csv"
 $report | Export-Csv -Path $exportPath -NoTypeInformation
 
 Write-Host "Export completed! File saved to $exportPath" -ForegroundColor Green

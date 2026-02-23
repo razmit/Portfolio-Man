@@ -7,7 +7,7 @@ try {
     $currentDateTime = Get-Date -Format "dd-MM-yyyy"
 
     # Create the name of the new CSV file that will contain ALL of the site collections in the tenant. Appends the date in which it was created
-    $exportPath = "C:\Users\E095713\Downloads\SiteCollection-Reports\SiteCollections-TenantWide-" + $currentDateTime + ".csv"
+    $exportPath = "C:\Users\LOCAL_USER\Downloads\SiteCollection-Reports\SiteCollections-TenantWide-" + $currentDateTime + ".csv"
 
     Get-SPOSite -Limit All | Export-Csv -Path $exportPath -NoTypeInformation
     

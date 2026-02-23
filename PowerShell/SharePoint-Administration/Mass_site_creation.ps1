@@ -71,7 +71,7 @@ function New-SubSite {
 }
 
 # We load the file containing the sites to be created
-$pathToFile = "C:\Users\E095713\Downloads\PCAOB_Mapping.xlsx"
+$pathToFile = "C:\Users\LOCAL_USER\Downloads\PCAOB_Mapping.xlsx"
 
 # Get the data from the Excel file
 $excelData = Import-Excel -Path $pathToFile -WorksheetName "Sheet1"
@@ -173,7 +173,7 @@ $updatedData = $excelData | ForEach-Object {
 }
 
 # Export the updated data to a new Excel file
-$exportPath = "C:\Users\E095713\Downloads\PCAOB_Mapping_Updated.xlsx"
+$exportPath = "C:\Users\LOCAL_USER\Downloads\PCAOB_Mapping_Updated.xlsx"
 $updatedData | Export-Excel -Path $exportPath -WorksheetName "UpdatedSites"
 
 

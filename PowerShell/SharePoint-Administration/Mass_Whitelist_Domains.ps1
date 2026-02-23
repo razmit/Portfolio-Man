@@ -1,5 +1,5 @@
 Import-Module -Name ImportExcel
-$excelPath = "C:\Users\E095713\Downloads\Whitelist-Teamdocs.xlsx"
+$excelPath = "C:\Users\LOCAL_USER\Downloads\Whitelist-Teamdocs.xlsx"
 $allSites = Import-Excel -Path $excelPath
 
 # The domain to whitelist
