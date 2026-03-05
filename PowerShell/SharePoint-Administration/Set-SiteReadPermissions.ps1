@@ -266,16 +266,26 @@ function Invoke-PermissionsChange {
     }
     $ctx.ExecuteQuery()
 
-    # ── Process each assignment
-    foreach ($ra in $ClientObject.RoleAssignments) {
-        $member    = $ra.Member
-        $roleNames = @($ra.RoleDefinitionBindings | ForEach-Object { $_.Name })
+    # ── Materialise all assignment data into plain PowerShell objects NOW,
+    #    before touching any permissions.  Set-PnP*Permission calls ExecuteQuery()
+    #    internally, which invalidates the loaded state of the CSOM collection;
+    #    if we were still iterating it we'd get "collection not initialised" errors.
+    $assignments = foreach ($ra in $ClientObject.RoleAssignments) {
+        [PSCustomObject]@{
+            Title         = $ra.Member.Title
+            LoginName     = $ra.Member.LoginName
+            PrincipalType = [int]$ra.Member.PrincipalType
+            RoleNames     = @($ra.RoleDefinitionBindings | ForEach-Object { $_.Name })
+        }
+    }
 
+    # ── Apply changes — no CSOM collections in flight at this point
+    foreach ($assignment in $assignments) {
         Set-PrincipalToRead `
-            -PrincipalTitle $member.Title `
-            -PrincipalLogin $member.LoginName `
-            -PrincipalType  ([int]$member.PrincipalType) `
-            -CurrentRoles   $roleNames `
+            -PrincipalTitle $assignment.Title `
+            -PrincipalLogin $assignment.LoginName `
+            -PrincipalType  $assignment.PrincipalType `
+            -CurrentRoles   $assignment.RoleNames `
             -ObjectType     $ObjectType `
             -ListIdentity   $ListIdentity `
             -ItemId         $ItemId `
