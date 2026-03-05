@@ -13,10 +13,8 @@
 # Parameters:
 #   -SiteUrl               (Required) URL of the root SharePoint site to audit.
 #   -IncludeSubsites       (Switch)   Also process all subsites found under the given site.
-#   -GroupNameFilter       (Optional) Whitelist of name fragments. Only groups whose Title contains
-#                                     at least one of the provided strings are exported (case-insensitive).
-#   -PermissionLevelFilter (Optional) Whitelist of permission level names. Only groups that have at
-#                                     least one matching permission level are exported (case-insensitive).
+#   -GroupNameFilter       (Optional) Whitelist of name fragments. Only groups whose Title contains at least one of the provided strings are exported (case-insensitive).
+#   -PermissionLevelFilter (Optional) Whitelist of permission level names. Only groups that have at least one matching permission level are exported (case-insensitive).
 #
 # Output:
 #   - CSV file with all matching group details (one row per group, SiteUrl column included)

@@ -1,7 +1,7 @@
 connect-pnpOnline -Url https://companynet.sharepoint.com/sites/SITE_NAME -clientId CLIENT_ID -interactive
 
 # The file's name
-$fileName = "Celina"
+$fileName = "Malaysia"
 
 # Get all document libraries in the site
 $lists = Get-PnPList | Where-Object { $_.BaseTemplate -eq 101 } # 101 is the template ID for document libraries
