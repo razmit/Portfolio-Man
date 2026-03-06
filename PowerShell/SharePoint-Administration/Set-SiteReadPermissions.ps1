@@ -138,6 +138,16 @@ function Set-PrincipalToRead {
         [string]   $ObjectDesc   = ""
     )
 
+    # ── Skip: SharingLinks principals are internal tokens SharePoint creates for
+    #    anonymous and company-wide sharing links. They are managed entirely by
+    #    SharePoint's sharing infrastructure; manually altering them causes errors
+    #    and can corrupt the sharing link. Leave them for the site owner to remove
+    #    via Site Settings → Shared With or the SharePoint Admin Center.
+    if ($PrincipalTitle -like "SharingLinks.*") {
+        Write-Log "    [SKIP] $PrincipalTitle — sharing link token (system-managed)" -Level Verbose
+        return
+    }
+
     # ── Skip: Limited Access is system-managed and cannot be directly removed
     #    without breaking permissions on child items that granted it.
     if ($CurrentRoles.Count -eq 1 -and $CurrentRoles[0] -eq "Limited Access") {
@@ -171,34 +181,28 @@ function Set-PrincipalToRead {
     $isSpGroup     = ($PrincipalType -eq 8)
     $principalArgs = if ($isSpGroup) { @{ Group = $PrincipalTitle } } else { @{ User = $PrincipalLogin } }
 
-    # Roles to remove = everything the principal currently holds except Read
-    # (if they already have Read we still want to keep it, just strip the rest)
+    # Roles to remove = everything the principal currently holds except Read.
+    # NOTE: RoleDefinitionPipeBind only accepts a single string, not an array.
+    # We add Read first (one call), then strip each old role individually.
     $rolesToRemove = @($CurrentRoles | Where-Object { $_ -ne "Read" })
 
     try {
+        # Add Read (no-op if they somehow already have it)
         switch ($ObjectType) {
-            "Site" {
-                if ($rolesToRemove.Count -gt 0) {
-                    Set-PnPWebPermission @principalArgs -AddRole "Read" -RemoveRole $rolesToRemove -ErrorAction Stop
-                } else {
-                    Set-PnPWebPermission @principalArgs -AddRole "Read" -ErrorAction Stop
-                }
-            }
-            "List" {
-                if ($rolesToRemove.Count -gt 0) {
-                    Set-PnPListPermission -Identity $ListIdentity @principalArgs -AddRole "Read" -RemoveRole $rolesToRemove -ErrorAction Stop
-                } else {
-                    Set-PnPListPermission -Identity $ListIdentity @principalArgs -AddRole "Read" -ErrorAction Stop
-                }
-            }
-            "Item" {
-                if ($rolesToRemove.Count -gt 0) {
-                    Set-PnPListItemPermission -List $ListIdentity -Identity $ItemId @principalArgs -AddRole "Read" -RemoveRole $rolesToRemove -ErrorAction Stop
-                } else {
-                    Set-PnPListItemPermission -List $ListIdentity -Identity $ItemId @principalArgs -AddRole "Read" -ErrorAction Stop
-                }
+            "Site" { Set-PnPWebPermission        @principalArgs -AddRole "Read"                           -ErrorAction Stop }
+            "List" { Set-PnPListPermission       -Identity $ListIdentity @principalArgs -AddRole "Read"   -ErrorAction Stop }
+            "Item" { Set-PnPListItemPermission   -List $ListIdentity -Identity $ItemId @principalArgs -AddRole "Read" -ErrorAction Stop }
+        }
+
+        # Remove each old role one at a time — the parameter only takes a single value
+        foreach ($role in $rolesToRemove) {
+            switch ($ObjectType) {
+                "Site" { Set-PnPWebPermission      @principalArgs -RemoveRole $role                         -ErrorAction Stop }
+                "List" { Set-PnPListPermission     -Identity $ListIdentity @principalArgs -RemoveRole $role -ErrorAction Stop }
+                "Item" { Set-PnPListItemPermission -List $ListIdentity -Identity $ItemId @principalArgs -RemoveRole $role -ErrorAction Stop }
             }
         }
+
         $script:ChangesApplied++
     }
     catch {
