@@ -374,15 +374,33 @@ try {
     Write-Log "Press Ctrl+C to abort (completed batches are final)" -Level Warning
     Write-Log ""
 
-    # CAML query that fetches the next $BatchSize items from the top of the list.
-    # After each successful deletion, re-running this query returns the next set
-    # of surviving items — no paging tokens needed, and the 5,000-item threshold
-    # does not apply to a simple RowLimit-only query.
-    $caml     = "<View><RowLimit>$BatchSize</RowLimit></View>"
+    # ID-cursor pagination: query WHERE ID > $lastId ORDER BY ID, advancing the
+    # cursor after each batch.  The ID column is always indexed in every SharePoint
+    # list/library, so this query is guaranteed never to hit the list view
+    # threshold — regardless of list size or whether any other indexed columns exist.
+    $lastId   = 0
     $batchNum = 0
 
     do {
         $batchNum++
+
+        # Build the CAML query for this window (IDs strictly greater than $lastId).
+        $caml = @"
+<View>
+  <Query>
+    <Where>
+      <Gt>
+        <FieldRef Name="ID"/>
+        <Value Type="Counter">$lastId</Value>
+      </Gt>
+    </Where>
+    <OrderBy>
+      <FieldRef Name="ID" Ascending="TRUE"/>
+    </OrderBy>
+  </Query>
+  <RowLimit>$BatchSize</RowLimit>
+</View>
+"@
 
         # ── Fetch next batch ───────────────────────────────────────────────────
         $items = $null
@@ -404,6 +422,11 @@ try {
             Write-Log "  No more items found — list is now empty." -Level Success
             break
         }
+
+        # Advance the cursor to the highest ID in this batch so the next query
+        # starts past it.  We do this before deletion so that even if some items
+        # fail, we don't loop on them forever (failures are captured in the CSV).
+        $lastId = ($items | Measure-Object -Property Id -Maximum).Maximum
 
         Write-Log "  Batch $batchNum | $($items.Count) items | total deleted so far: $($script:TotalDeleted)" -Level Info
 
