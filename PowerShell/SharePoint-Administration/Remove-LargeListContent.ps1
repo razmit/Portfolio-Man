@@ -361,17 +361,20 @@ try {
         # Escape single quotes in the title for OData string literals ('  →  '')
         $escapedTitle = $ListTitle.Replace("'", "''")
 
+        $baseUrl  = $SiteUrl.TrimEnd('/')
+        $listBase = "$baseUrl/_api/web/lists/getbytitle('$escapedTitle')"
+
         Invoke-WithRetry -Label "Delete list '$ListTitle'" -Action {
             if ($Recycle) {
                 # POST to the recycle() endpoint — sends list to first-stage Recycle Bin
                 Invoke-PnPSPRestMethod -Method Post `
-                    -Url "_api/web/lists/getbytitle('$escapedTitle')/recycle()" `
+                    -Url "$listBase/recycle()" `
                     -ErrorAction Stop | Out-Null
             }
             else {
                 # HTTP DELETE — permanently removes the list
                 Invoke-PnPSPRestMethod -Method Delete `
-                    -Url "_api/web/lists/getbytitle('$escapedTitle')" `
+                    -Url $listBase `
                     -ErrorAction Stop | Out-Null
             }
         }
@@ -407,6 +410,7 @@ try {
     # through Get-PnPListItem, which can still fall back to a scan in some
     # PnP.PowerShell versions.
     $escapedTitle = $ListTitle.Replace("'", "''")
+    $baseUrl      = $SiteUrl.TrimEnd('/')
     $lastId       = 0
     $batchNum     = 0
 
@@ -414,9 +418,10 @@ try {
         $batchNum++
 
         # ── Fetch next batch via REST ──────────────────────────────────────────
+        # Absolute URL required by Invoke-PnPSPRestMethod in some PnP versions.
         # $select, $filter, $orderby, $top are OData params; backtick-escape the
         # $ so PowerShell does not treat them as variable sigils.
-        $restUrl = "_api/web/lists/getbytitle('$escapedTitle')/items" +
+        $restUrl = "$baseUrl/_api/web/lists/getbytitle('$escapedTitle')/items" +
                    "?`$select=Id,FileLeafRef,FileRef,CheckoutUser/LoginName" +
                    "&`$expand=CheckoutUser" +
                    "&`$filter=Id gt $lastId" +
