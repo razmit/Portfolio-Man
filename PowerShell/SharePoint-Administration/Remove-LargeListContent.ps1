@@ -403,8 +403,7 @@ try {
         # $select, $filter, $orderby, $top are OData params; backtick-escape the
         # $ so PowerShell does not treat them as variable sigils.
         $restUrl = "$baseUrl/_api/web/lists/getbytitle('$escapedTitle')/items" +
-                   "?`$select=Id,FileLeafRef,FileRef,CheckoutUser/LoginName" +
-                   "&`$expand=CheckoutUser" +
+                   "?`$select=Id,FileLeafRef,FileRef" +
                    "&`$filter=Id gt $lastId" +
                    "&`$orderby=Id asc" +
                    "&`$top=$BatchSize"
@@ -433,25 +432,6 @@ try {
         $lastId = ($items | Measure-Object -Property Id -Maximum).Maximum
 
         Write-Log "  Batch $batchNum | $($items.Count) items | total deleted so far: $($script:TotalDeleted)" -Level Info
-
-        # ── Undo checkouts (document libraries only) ───────────────────────────
-        # REST API returns CheckoutUser as an expanded object with a LoginName
-        # property; null means not checked out.
-        foreach ($item in $items) {
-            if ($item.CheckoutUser -and $item.CheckoutUser.LoginName) {
-                $fname   = $item.FileLeafRef
-                $fileRef = $item.FileRef
-                Write-Log "    [CHECKOUT] Undoing checkout on: $fname" -Level Warning
-                try {
-                    if ($fileRef) {
-                        Undo-PnPFileCheckOut -Url $fileRef -ErrorAction SilentlyContinue
-                    }
-                }
-                catch {
-                    Write-Log "    [WARN] Could not undo checkout on '$fname': $($_.Exception.Message)" -Level Warning
-                }
-            }
-        }
 
         # ── Build and execute PnP batch delete ─────────────────────────────────
         # Batching bundles all Remove calls into a single $batch REST request,
