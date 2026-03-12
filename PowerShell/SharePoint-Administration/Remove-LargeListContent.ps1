@@ -238,7 +238,10 @@ function Invoke-FallbackDelete {
 
     foreach ($item in $Items) {
         $itemId   = $item.Id
-        $fileName = if ($item.FieldValues.FileLeafRef) { $item.FieldValues.FileLeafRef } else { "Item $itemId" }
+        # REST API responses expose .FileLeafRef directly; CSOM objects use .FieldValues
+        $fileName = if ($item.FileLeafRef)                              { $item.FileLeafRef } `
+                    elseif ($item.FieldValues -and $item.FieldValues.FileLeafRef) { $item.FieldValues.FileLeafRef } `
+                    else                                                { "Item $itemId"   }
 
         try {
             Invoke-WithRetry -Label "Delete $fileName (ID $itemId)" -Action {
@@ -344,14 +347,33 @@ try {
     }
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Mode: DeleteList — remove the entire list/library in one server-side call
+    # Mode: DeleteList — remove the entire list/library via REST API
+    #
+    # Remove-PnPList (CSOM) can internally trigger the list view threshold when
+    # the list is very large.  The REST API DELETE/recycle() call is a pure
+    # metadata operation that does not enumerate items and therefore bypasses
+    # the threshold entirely.
     # ═══════════════════════════════════════════════════════════════════════════
     if ($Mode -eq "DeleteList") {
         Write-Log ""
         Write-Log "Removing '$ListTitle' ($itemCount items) ..." -Level Action
 
-        Invoke-WithRetry -Label "Remove-PnPList '$ListTitle'" -Action {
-            Remove-PnPList -Identity $ListTitle -Recycle:$Recycle -Force -ErrorAction Stop
+        # Escape single quotes in the title for OData string literals ('  →  '')
+        $escapedTitle = $ListTitle.Replace("'", "''")
+
+        Invoke-WithRetry -Label "Delete list '$ListTitle'" -Action {
+            if ($Recycle) {
+                # POST to the recycle() endpoint — sends list to first-stage Recycle Bin
+                Invoke-PnPSPRestMethod -Method Post `
+                    -Url "_api/web/lists/getbytitle('$escapedTitle')/recycle()" `
+                    -ErrorAction Stop | Out-Null
+            }
+            else {
+                # HTTP DELETE — permanently removes the list
+                Invoke-PnPSPRestMethod -Method Delete `
+                    -Url "_api/web/lists/getbytitle('$escapedTitle')" `
+                    -ErrorAction Stop | Out-Null
+            }
         }
 
         Write-Log "List/library removed successfully." -Level Success
@@ -374,43 +396,39 @@ try {
     Write-Log "Press Ctrl+C to abort (completed batches are final)" -Level Warning
     Write-Log ""
 
-    # ID-cursor pagination: query WHERE ID > $lastId ORDER BY ID, advancing the
-    # cursor after each batch.  The ID column is always indexed in every SharePoint
-    # list/library, so this query is guaranteed never to hit the list view
-    # threshold — regardless of list size or whether any other indexed columns exist.
-    $lastId   = 0
-    $batchNum = 0
+    # ID-cursor pagination via REST API.
+    #
+    # Using REST with $filter=Id gt $lastId&$orderby=Id asc is the approach
+    # Microsoft recommends for traversing lists that exceed the view threshold:
+    # https://learn.microsoft.com/en-us/sharepoint/dev/general-development/best-practices-for-using-the-sharepoint-javascript-object-model
+    # The REST endpoint performs an indexed seek on the ID column and never does
+    # a full table scan, so it cannot trigger the 5,000-item threshold regardless
+    # of list size.  This is fundamentally different from CAML queries processed
+    # through Get-PnPListItem, which can still fall back to a scan in some
+    # PnP.PowerShell versions.
+    $escapedTitle = $ListTitle.Replace("'", "''")
+    $lastId       = 0
+    $batchNum     = 0
 
     do {
         $batchNum++
 
-        # Build the CAML query for this window (IDs strictly greater than $lastId).
-        $caml = @"
-<View>
-  <Query>
-    <Where>
-      <Gt>
-        <FieldRef Name="ID"/>
-        <Value Type="Counter">$lastId</Value>
-      </Gt>
-    </Where>
-    <OrderBy>
-      <FieldRef Name="ID" Ascending="TRUE"/>
-    </OrderBy>
-  </Query>
-  <RowLimit>$BatchSize</RowLimit>
-</View>
-"@
+        # ── Fetch next batch via REST ──────────────────────────────────────────
+        # $select, $filter, $orderby, $top are OData params; backtick-escape the
+        # $ so PowerShell does not treat them as variable sigils.
+        $restUrl = "_api/web/lists/getbytitle('$escapedTitle')/items" +
+                   "?`$select=Id,FileLeafRef,FileRef,CheckoutUser/LoginName" +
+                   "&`$expand=CheckoutUser" +
+                   "&`$filter=Id gt $lastId" +
+                   "&`$orderby=Id asc" +
+                   "&`$top=$BatchSize"
 
-        # ── Fetch next batch ───────────────────────────────────────────────────
         $items = $null
         try {
-            $items = Invoke-WithRetry -Label "Fetch batch $batchNum" -Action {
-                Get-PnPListItem -List $ListTitle `
-                    -Query  $caml `
-                    -Fields "ID", "FileLeafRef", "FileRef", "CheckoutUser" `
-                    -ErrorAction Stop
+            $response = Invoke-WithRetry -Label "Fetch batch $batchNum" -Action {
+                Invoke-PnPSPRestMethod -Method Get -Url $restUrl -ErrorAction Stop
             }
+            $items = if ($response -and $response.value) { $response.value } else { @() }
         }
         catch {
             Write-Log "  [ERROR] Could not retrieve batch $batchNum : $($_.Exception.Message)" -Level Error
@@ -431,10 +449,12 @@ try {
         Write-Log "  Batch $batchNum | $($items.Count) items | total deleted so far: $($script:TotalDeleted)" -Level Info
 
         # ── Undo checkouts (document libraries only) ───────────────────────────
+        # REST API returns CheckoutUser as an expanded object with a LoginName
+        # property; null means not checked out.
         foreach ($item in $items) {
-            if ($item.FieldValues.CheckoutUser) {
-                $fname   = $item.FieldValues.FileLeafRef
-                $fileRef = $item.FieldValues.FileRef
+            if ($item.CheckoutUser -and $item.CheckoutUser.LoginName) {
+                $fname   = $item.FileLeafRef
+                $fileRef = $item.FileRef
                 Write-Log "    [CHECKOUT] Undoing checkout on: $fname" -Level Warning
                 try {
                     if ($fileRef) {
@@ -447,7 +467,7 @@ try {
             }
         }
 
-        # ── Build and execute PnP batch delete ────────────────────────────────
+        # ── Build and execute PnP batch delete ─────────────────────────────────
         # Batching bundles all Remove calls into a single $batch REST request,
         # dramatically reducing round-trips compared to one call per item.
         $pnpBatch    = New-PnPBatch
