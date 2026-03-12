@@ -347,48 +347,29 @@ try {
     }
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Mode: DeleteList — remove the entire list/library via REST API
+    # Item-clearing loop — runs for both ClearItems and DeleteList modes.
     #
-    # Remove-PnPList (CSOM) can internally trigger the list view threshold when
-    # the list is very large.  The REST API DELETE/recycle() call is a pure
-    # metadata operation that does not enumerate items and therefore bypasses
-    # the threshold entirely.
+    # SharePoint triggers the list view threshold even on a REST DELETE of the
+    # list resource itself when the list has many items (the server must process
+    # each item for search-index cleanup, audit records, etc. before it will
+    # allow the structure to be removed).  The only reliable fix is to empty
+    # all items first via ID-cursor REST pagination, then delete the (now empty)
+    # structure.  ClearItems stops after emptying; DeleteList continues to the
+    # structure-removal step below.
     # ═══════════════════════════════════════════════════════════════════════════
-    if ($Mode -eq "DeleteList") {
+    if ($Mode -eq "DeleteList" -and $itemCount -gt 0) {
         Write-Log ""
-        Write-Log "Removing '$ListTitle' ($itemCount items) ..." -Level Action
-
-        # Escape single quotes in the title for OData string literals ('  →  '')
-        $escapedTitle = $ListTitle.Replace("'", "''")
-
-        $baseUrl  = $SiteUrl.TrimEnd('/')
-        $listBase = "$baseUrl/_api/web/lists/getbytitle('$escapedTitle')"
-
-        Invoke-WithRetry -Label "Delete list '$ListTitle'" -Action {
-            if ($Recycle) {
-                # POST to the recycle() endpoint — sends list to first-stage Recycle Bin
-                Invoke-PnPSPRestMethod -Method Post `
-                    -Url "$listBase/recycle()" `
-                    -ErrorAction Stop | Out-Null
-            }
-            else {
-                # HTTP DELETE — permanently removes the list
-                Invoke-PnPSPRestMethod -Method Delete `
-                    -Url $listBase `
-                    -ErrorAction Stop | Out-Null
-            }
-        }
-
-        Write-Log "List/library removed successfully." -Level Success
-        return
+        Write-Log "DeleteList: clearing $itemCount items first (SP blocks direct list" -Level Warning
+        Write-Log "            deletion on large lists — items must be emptied first)." -Level Warning
     }
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # Mode: ClearItems — batch-delete all items, preserve list structure
-    # ═══════════════════════════════════════════════════════════════════════════
     if ($itemCount -eq 0) {
-        Write-Log "List is already empty — nothing to do." -Level Warning
-        return
+        if ($Mode -eq "ClearItems") {
+            Write-Log "List is already empty — nothing to do." -Level Warning
+            return
+        }
+        # DeleteList with an already-empty list — skip the clearing loop below
+        Write-Log "List is already empty — skipping item clearing." -Level Info
     }
 
     $estimatedBatches = [Math]::Ceiling($itemCount / $BatchSize)
@@ -521,7 +502,7 @@ try {
     # ── Summary ────────────────────────────────────────────────────────────────
     Write-Log ""
     Write-Log "═══════════════════════════════════════════════════════════════" -Level Info
-    Write-Log " SUMMARY (ClearItems)"                                           -Level Info
+    Write-Log " SUMMARY ($Mode)"                                                  -Level Info
     Write-Log "═══════════════════════════════════════════════════════════════" -Level Info
     Write-Log " Batches run     : $batchNum"                                     -Level Info
     Write-Log " Items deleted   : $($script:TotalDeleted)"                       -Level $(if ($script:TotalDeleted -gt 0) { "Success" } else { "Info" })
@@ -533,6 +514,37 @@ try {
         $script:FailedItems | Export-Csv -Path $FailureCsvPath -NoTypeInformation
         Write-Log ""
         Write-Log "Failed items exported to: $FailureCsvPath" -Level Warning
+    }
+
+    # ── DeleteList: remove the now-empty list structure ────────────────────────
+    if ($Mode -eq "DeleteList") {
+        if ($script:TotalFailed -gt 0) {
+            Write-Log ""
+            Write-Log "WARNING: $($script:TotalFailed) item(s) could not be deleted (see CSV)." -Level Warning
+            Write-Log "         Proceeding with list structure removal anyway."                  -Level Warning
+        }
+
+        Write-Log ""
+        Write-Log "Removing list structure '$ListTitle' ..." -Level Action
+
+        $escapedTitle = $ListTitle.Replace("'", "''")
+        $baseUrl      = $SiteUrl.TrimEnd('/')
+        $listBase     = "$baseUrl/_api/web/lists/getbytitle('$escapedTitle')"
+
+        Invoke-WithRetry -Label "Delete list structure '$ListTitle'" -Action {
+            if ($Recycle) {
+                Invoke-PnPSPRestMethod -Method Post `
+                    -Url "$listBase/recycle()" `
+                    -ErrorAction Stop | Out-Null
+            }
+            else {
+                Invoke-PnPSPRestMethod -Method Delete `
+                    -Url $listBase `
+                    -ErrorAction Stop | Out-Null
+            }
+        }
+
+        Write-Log "List/library removed successfully." -Level Success
     }
 
     Write-Log ""
