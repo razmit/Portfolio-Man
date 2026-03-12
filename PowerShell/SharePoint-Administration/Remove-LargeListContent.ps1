@@ -434,25 +434,29 @@ try {
         Write-Log "  Batch $batchNum | $($items.Count) items | total deleted so far: $($script:TotalDeleted)" -Level Info
 
         # ── Build and execute PnP batch delete ─────────────────────────────────
-        # Batching bundles all Remove calls into a single $batch REST request,
-        # dramatically reducing round-trips compared to one call per item.
-        $pnpBatch    = New-PnPBatch
+        # -Recycle and -Force belong to a different parameter set than -Batch in
+        # PnP.PowerShell, so they cannot be combined.  When recycling is requested
+        # skip batching entirely and let Invoke-FallbackDelete handle each item
+        # individually (it uses -Recycle:$Recycle -Force correctly).
         $batchSuccess = $false
 
-        foreach ($item in $items) {
-            Remove-PnPListItem -List $ListTitle -Identity $item.Id `
-                -Recycle:$Recycle -Batch $pnpBatch -Force
-        }
+        if (-not $Recycle) {
+            $pnpBatch = New-PnPBatch
 
-        try {
-            Invoke-WithRetry -Label "Execute batch $batchNum" -Action {
-                Invoke-PnPBatch -Batch $pnpBatch -ErrorAction Stop
+            foreach ($item in $items) {
+                Remove-PnPListItem -List $ListTitle -Identity $item.Id -Batch $pnpBatch
             }
-            $batchSuccess = $true
-        }
-        catch {
-            Write-Log "  [WARN] Batch $batchNum failed: $($_.Exception.Message)" -Level Warning
-            Write-Log "         Falling back to item-by-item deletion for this batch..." -Level Warning
+
+            try {
+                Invoke-WithRetry -Label "Execute batch $batchNum" -Action {
+                    Invoke-PnPBatch -Batch $pnpBatch -ErrorAction Stop
+                }
+                $batchSuccess = $true
+            }
+            catch {
+                Write-Log "  [WARN] Batch $batchNum failed: $($_.Exception.Message)" -Level Warning
+                Write-Log "         Falling back to item-by-item deletion for this batch..." -Level Warning
+            }
         }
 
         if ($batchSuccess) {
