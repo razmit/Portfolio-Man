@@ -253,12 +253,9 @@ function Add-MaintenanceBanner {
         $endDate = [DateTime]::Parse($MaintenanceEnd)
         $dateRange = "$($startDate.ToString('MM/dd/yyyy hh:mm tt')) - $($endDate.ToString('h:mm tt')) CT"
 
-        # Get the page
-        $pagePath = "SitePages/$PageName"
-
         if ($DryRun) {
             Write-Host "    [DRY-RUN] Would add banner to: $PageName" -ForegroundColor Magenta
-            return @{ Success = $true; PageName = $PageName; Action = "Add" }
+            return @{ Success = $true; PageName = $PageName; Action = "Add"; InstanceId = $null }
         }
 
         # Check if page exists
@@ -274,29 +271,55 @@ function Add-MaintenanceBanner {
 </div>
 "@
 
-        # Try to add a new section at the top for the banner
+        # Try to add a new section at the top for the banner.
+        # If the page has a full-width section at position 1 (e.g., Hero), SharePoint won't allow
+        # inserting a OneColumn section before it, so we fall back to inserting at position 2.
         try {
             Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ErrorAction Stop
             Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
         }
         catch {
-            # If adding section fails (e.g., page has complex layout), try alternative approach
-            Write-Host "    ⚠ Standard section add failed, trying alternative method..." -ForegroundColor Yellow
+            Write-Host "    ⚠ Could not insert section at top (full-width section may be present), trying section 2..." -ForegroundColor Yellow
 
-            # Try adding to section 2 instead (push existing content further down)
             try {
-                Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 1 -ZoneEmphasis 0 -ErrorAction Stop
-                Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 1 -Column 1 -ErrorAction Stop
+                Add-PnPPageSection -Page $PageName -SectionTemplate OneColumn -Order 2 -ErrorAction Stop
+                Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -Section 2 -Column 1 -ErrorAction Stop
+                Write-Host "    ⚠ Banner placed at section 2 (below full-width top section)" -ForegroundColor Yellow
             }
             catch {
-                # Last resort: add to bottom and warn user
-                Write-Host "    ⚠ Could not add banner at top, adding to bottom of page..." -ForegroundColor Yellow
+                # Last resort: add without specifying section
+                Write-Host "    ⚠ Could not add banner at section 2 either, adding to end of page..." -ForegroundColor Yellow
                 Add-PnPPageTextPart -Page $PageName -Text $bannerHtml -ErrorAction Stop
             }
         }
 
         # Publish the page
         Set-PnPPage -Identity $PageName -Publish -ErrorAction Stop
+
+        # Re-fetch the page to capture the InstanceId of the banner we just added.
+        # This ID is saved to the backup JSON so restore can remove it precisely.
+        $instanceId = $null
+        try {
+            $updatedPage = Get-PnPPage -Identity $PageName -ErrorAction Stop
+            foreach ($control in $updatedPage.Controls) {
+                $controlText = $null
+                try { $controlText = $control.Text } catch {}
+                if ($controlText -and $controlText -like "*IMPORTANT!*") {
+                    $instanceId = $control.InstanceId.ToString()
+                    break
+                }
+            }
+
+            if ($instanceId) {
+                Write-Host "    ✓ Banner InstanceId captured for restore: $instanceId" -ForegroundColor DarkGray
+            }
+            else {
+                Write-Host "    ⚠ Could not capture banner InstanceId - restore will fall back to text search" -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host "    ⚠ Could not re-fetch page to get banner InstanceId: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
 
         Write-Host "    ✓ Added banner to: $PageName" -ForegroundColor Green
 
@@ -306,11 +329,12 @@ function Add-MaintenanceBanner {
             Action = "Add"
             StartTime = $MaintenanceStart
             EndTime = $MaintenanceEnd
+            InstanceId = $instanceId
         }
     }
     catch {
         Write-Host "    ✗ Failed to add banner to: $PageName - $($_.Exception.Message)" -ForegroundColor Red
-        return @{ Success = $false; PageName = $PageName; Error = $_.Exception.Message }
+        return @{ Success = $false; PageName = $PageName; Error = $_.Exception.Message; InstanceId = $null }
     }
 }
 
@@ -318,6 +342,7 @@ function Add-MaintenanceBanner {
 function Remove-MaintenanceBanner {
     param (
         [string]$PageName,
+        [string]$InstanceId = $null,
         [switch]$DryRun
     )
 
@@ -330,17 +355,32 @@ function Remove-MaintenanceBanner {
         # Get the page
         $page = Get-PnPPage -Identity $PageName -ErrorAction Stop
 
-        # Get all text web parts
-        $controls = $page.Controls | Where-Object { $_.Type.Name -eq "ClientSideText" }
-
         $removed = $false
-        foreach ($control in $controls) {
-            # Check if this is our maintenance banner (contains "IMPORTANT!" text)
-            if ($control.Text -like "*IMPORTANT!*" -and $control.Text -like "*read-only*") {
-                Remove-PnPPageComponent -Page $PageName -InstanceId $control.InstanceId -Force -ErrorAction Stop
+
+        # Preferred: remove directly by InstanceId saved during Add-MaintenanceBanner
+        if (-not [string]::IsNullOrWhiteSpace($InstanceId)) {
+            try {
+                Remove-PnPPageComponent -Page $PageName -InstanceId $InstanceId -Force -ErrorAction Stop
                 $removed = $true
-                Write-Host "    ✓ Removed banner from: $PageName" -ForegroundColor Green
-                break
+                Write-Host "    ✓ Removed banner from: $PageName (matched by InstanceId)" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "    ⚠ InstanceId removal failed, falling back to text search..." -ForegroundColor Yellow
+            }
+        }
+
+        # Fallback: search all controls for our banner signature
+        if (-not $removed) {
+            foreach ($control in $page.Controls) {
+                $controlText = $null
+                try { $controlText = $control.Text } catch {}
+
+                if ($controlText -and $controlText -like "*IMPORTANT!*" -and $controlText -like "*read-only*") {
+                    Remove-PnPPageComponent -Page $PageName -InstanceId $control.InstanceId -Force -ErrorAction Stop
+                    $removed = $true
+                    Write-Host "    ✓ Removed banner from: $PageName (matched by text search)" -ForegroundColor Green
+                    break
+                }
             }
         }
 
@@ -379,29 +419,65 @@ function Invoke-BannerOperation {
 
     $results = @()
 
-    foreach ($pageName in $Global:PageNames) {
-        Write-Host "`n→ Processing page: $pageName" -ForegroundColor Cyan
-
-        if ($Operation -eq "Add") {
-            $result = Add-MaintenanceBanner -PageName $pageName -MaintenanceStart $MaintenanceStart -MaintenanceEnd $MaintenanceEnd -DryRun:$DryRun
+    if ($Operation -eq "Remove") {
+        # Load per-page InstanceIds saved during Add so we can remove banners precisely
+        $pageInstanceIds = @{}
+        if (Test-Path $Global:BannerBackupFile) {
+            try {
+                $backupData = Get-Content $Global:BannerBackupFile -Raw | ConvertFrom-Json
+                # Pages array now contains objects with Name and InstanceId
+                if ($backupData.Pages -and $backupData.Pages[0].PSObject.Properties.Name -contains "Name") {
+                    foreach ($pageData in $backupData.Pages) {
+                        if ($pageData.InstanceId) {
+                            $pageInstanceIds[$pageData.Name] = $pageData.InstanceId
+                        }
+                    }
+                    Write-Host "✓ Loaded banner InstanceIds from backup" -ForegroundColor DarkGray
+                }
+                else {
+                    Write-Host "⚠ Backup uses old format (no InstanceIds) - will use text search for removal" -ForegroundColor Yellow
+                }
+            }
+            catch {
+                Write-Host "⚠ Could not load banner backup file - will use text search: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
         }
         else {
-            $result = Remove-MaintenanceBanner -PageName $pageName -DryRun:$DryRun
+            Write-Host "⚠ No banner backup file found - will use text search for removal" -ForegroundColor Yellow
         }
 
-        $results += $result
+        foreach ($pageName in $Global:PageNames) {
+            Write-Host "`n→ Processing page: $pageName" -ForegroundColor Cyan
+            $instanceId = $pageInstanceIds[$pageName]
+            $result = Remove-MaintenanceBanner -PageName $pageName -InstanceId $instanceId -DryRun:$DryRun
+            $results += $result
+        }
+    }
+    else {
+        foreach ($pageName in $Global:PageNames) {
+            Write-Host "`n→ Processing page: $pageName" -ForegroundColor Cyan
+            $result = Add-MaintenanceBanner -PageName $pageName -MaintenanceStart $MaintenanceStart -MaintenanceEnd $MaintenanceEnd -DryRun:$DryRun
+            $results += $result
+        }
     }
 
-    # Save banner operation details for restore
+    # Save banner operation details for restore, including per-page InstanceIds
     if ($Operation -eq "Add" -and -not $DryRun) {
-        $backupData = @{
-            Environment = $Environment
-            Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-            MaintenanceStart = $MaintenanceStart
-            MaintenanceEnd = $MaintenanceEnd
-            Pages = $Global:PageNames
+        $pageData = $results | ForEach-Object {
+            @{
+                Name       = $_.PageName
+                InstanceId = $_.InstanceId
+                BannerAdded = $_.Success
+            }
         }
-        $backupData | ConvertTo-Json | Set-Content -Path $Global:BannerBackupFile
+        $backupData = @{
+            Environment      = $Environment
+            Timestamp        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            MaintenanceStart = $MaintenanceStart
+            MaintenanceEnd   = $MaintenanceEnd
+            Pages            = $pageData
+        }
+        $backupData | ConvertTo-Json -Depth 3 | Set-Content -Path $Global:BannerBackupFile
         Write-Host "`n✓ Banner metadata saved for restore" -ForegroundColor Green
     }
 
@@ -695,20 +771,40 @@ function Invoke-RestoreMode {
                             Write-Host "    ⚠ Skipping system-managed permissions: $($filteredPerms -join ', ')" -ForegroundColor DarkYellow
                         }
 
-                        # Skip if nothing changed (original and current both Read-only)
+                        # Safety check: if the original permission was already Read and current is
+                        # also Read, there is nothing to restore - skip to avoid accidentally
+                        # removing Read from associated Visitors/Members groups that always have it.
                         if ($restorablePermissions.Count -eq 1 -and $restorablePermissions[0] -eq "Read" -and $currentRoles -contains "Read") {
                             Write-Host "    → No changes needed: $principalTitle already has correct Read permission" -ForegroundColor DarkGray
+                            $totalSuccess++
                             continue
                         }
-                        
-                        # Remove current permissions
+
+                        # Remove current permissions (skip Read here - handled explicitly below
+                        # to avoid a window where the principal has no permissions at all)
                         foreach ($role in $currentRoles) {
+                            if ($role -eq "Read") {
+                                continue
+                            }
                             if ($isGroup) {
                                 Set-PnPListPermission -Identity $listGuid -Group $principalTitle -RemoveRole $role -ErrorAction Stop
                             }
                             else {
                                 Set-PnPListPermission -Identity $listGuid -User $principalTitle -RemoveRole $role -ErrorAction Stop
                             }
+                        }
+
+                        # Explicitly remove the Read that Lock mode added
+                        try {
+                            if ($isGroup) {
+                                Set-PnPListPermission -Identity $listGuid -Group $principalTitle -RemoveRole "Read" -ErrorAction SilentlyContinue
+                            }
+                            else {
+                                Set-PnPListPermission -Identity $listGuid -User $principalTitle -RemoveRole "Read" -ErrorAction SilentlyContinue
+                            }
+                        }
+                        catch {
+                            # Read may not exist or was already removed - not an error
                         }
 
                         # Add back original permissions (excluding system-managed ones)
