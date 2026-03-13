@@ -8,10 +8,11 @@
 # Usage:
 #   Lock Mode (UAT):  .\VAAP_Alter_Permissions_Maintenance.ps1 -Environment UAT -MaintenanceStart "01/20/2026 11:30 AM" -MaintenanceEnd "01/20/2026 2:30 PM" [-DryRun]
 #   Lock Mode (Prod): .\VAAP_Alter_Permissions_Maintenance.ps1 -Environment Prod -MaintenanceStart "01/20/2026 11:30 AM" -MaintenanceEnd "01/20/2026 2:30 PM" [-DryRun]
-#   Restore Mode:     .\VAAP_Alter_Permissions_Maintenance.ps1 -Restore -Environment <UAT|Prod> [-DryRun]
+#   Lock Mode (Dev):  .\VAAP_Alter_Permissions_Maintenance.ps1 -Environment Dev -MaintenanceStart "01/20/2026 11:30 AM" -MaintenanceEnd "01/20/2026 2:30 PM" [-DryRun]
+#   Restore Mode:     .\VAAP_Alter_Permissions_Maintenance.ps1 -Restore -Environment <UAT|Prod|Dev> [-DryRun]
 #
 # Parameters:
-#   -Environment        : Target environment (UAT or Prod) - REQUIRED
+#   -Environment        : Target environment (UAT || Prod || Dev) - REQUIRED
 #   -MaintenanceStart   : Maintenance window start time (required for Lock mode)
 #   -MaintenanceEnd     : Maintenance window end time (required for Lock mode)
 #   -Restore            : Restore permissions and remove banner
@@ -21,7 +22,7 @@
 #   - CSV backup files in: %USERPROFILE%\Downloads\VAAP-Permissions\
 #
 # Features:
-#   - Supports UAT and Prod environments with separate configurations
+#   - Supports UAT, Prod, and Dev environments with separate configurations
 #   - Adds maintenance banner to specific pages when locking
 #   - Removes banner when restoring
 #   - Modifies permissions on specific VAAP lists (hardcoded GUIDs)
